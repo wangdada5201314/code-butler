@@ -1,0 +1,40 @@
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### IntelliJ ###
+.idea/
+*.iml
+*.iws
+*.ipr
+
+### Eclipse ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings/
+.springBeans
+.sts4-cache
+
+### VS Code ###
+.vscode/
+
+### Mac ###
+.DS_Store
+
+### Logs ###
+*.log
+
+### Env ###
+.env
+.env.local
+
+### WorkBuddy ###
+.workbuddy/
+
+### AgentScope ###
+.agentscope/*
+!.agentscope/workspace/
+!.agentscope/workspace/AGENTS.md

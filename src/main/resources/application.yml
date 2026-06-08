@@ -1,0 +1,54 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: code-butler
+
+# CORS 跨域配置
+cors:
+  allowed-origins: "*"
+
+# AgentScope 配置
+agentscope:
+  # 模型配置
+  model:
+    # 默认模型：dashscope（通义千问），支持 openai / anthropic / gemini
+    default: dashscope:qwen-plus
+
+  # Agent 调用超时（秒），交互式审查可能较慢
+  call-timeout-seconds: 120
+
+  # 工作区路径（Agent 人格、技能、日志存放位置）
+  workspace:
+    path: .agentscope/workspace
+
+  # 内存压缩配置
+  compaction:
+    trigger-messages: 30
+    keep-messages: 10
+
+# DashScope API Key（通过环境变量 DASHSCOPE_API_KEY 注入，此处仅声明默认值）
+# 也可在 application-{profile}.yml 中覆盖
+dashscope:
+  api-key: ${DASHSCOPE_API_KEY:}
+
+# Git 操作配置
+git:
+  # Git 命令超时（秒）
+  command-timeout-seconds: 30
+
+# Actuator 健康检查
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when_authorized
+
+logging:
+  level:
+    io.agentscope: debug
+    com.agent.codebutler: debug

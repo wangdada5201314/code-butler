@@ -1,0 +1,107 @@
+package com.agent.codebutler.handler;
+
+import com.agent.codebutler.dto.ApiResponse;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+
+import java.util.StringJoiner;
+import java.util.concurrent.TimeoutException;
+
+/**
+ * 全局异常处理器
+ * 统一捕获 Controller 层异常，返回标准 ApiResponse
+ */
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    // ---- 400 类 ----
+
+    /** 参数校验失败（@RequestBody @Valid） */
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ApiResponse<Void>> handleValidation(MethodArgumentNotValidException ex) {
+        StringJoiner errors = new StringJoiner("; ");
+        ex.getBindingResult().getFieldErrors().forEach(fe ->
+                errors.add(fe.getField() + ": " + fe.getDefaultMessage()));
+        log.warn("请求参数校验失败: {}", errors);
+        return ResponseEntity.badRequest()
+                .body(ApiResponse.error(400, "参数校验失败: " + errors));
+    }
+
+    /** 参数校验失败（@Validated on class） */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleConstraintViolation(ConstraintViolationException ex) {
+        StringJoiner errors = new StringJoiner("; ");
+        for (ConstraintViolation<?> cv : ex.getConstraintViolations()) {
+            errors.add(cv.getPropertyPath() + ": " + cv.getMessage());
+        }
+        log.warn("约束校验失败: {}", errors);
+        return ResponseEntity.badRequest()
+                .body(ApiResponse.error(400, "参数校验失败: " + errors));
+    }
+
+    /** 缺少必填请求参数 */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMissingParam(MissingServletRequestParameterException ex) {
+        log.warn("缺少必填参数: {}", ex.getParameterName());
+        return ResponseEntity.badRequest()
+                .body(ApiResponse.error(400, "缺少必填参数: " + ex.getParameterName()));
+    }
+
+    /** 请求参数类型不匹配 */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiResponse<Void>> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        log.warn("参数类型不匹配: {} = {}", ex.getName(), ex.getValue());
+        return ResponseEntity.badRequest()
+                .body(ApiResponse.error(400, "参数类型不匹配: " + ex.getName()));
+    }
+
+    /** 请求体解析失败 */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiResponse<Void>> handleNotReadable(HttpMessageNotReadableException ex) {
+        log.warn("请求体解析失败: {}", ex.getMessage());
+        return ResponseEntity.badRequest()
+                .body(ApiResponse.error(400, "请求体格式错误"));
+    }
+
+    // ---- 400 业务类 ----
+
+    /** 非法参数（如路径校验失败） */
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ApiResponse<Void>> handleIllegalArgument(IllegalArgumentException ex) {
+        log.warn("非法参数: {}", ex.getMessage());
+        return ResponseEntity.badRequest()
+                .body(ApiResponse.error(400, ex.getMessage()));
+    }
+
+    // ---- 408 类 ----
+
+    /** 操作超时 */
+    @ExceptionHandler(TimeoutException.class)
+    public ResponseEntity<ApiResponse<Void>> handleTimeout(TimeoutException ex) {
+        log.error("操作超时", ex);
+        return ResponseEntity.status(HttpStatus.REQUEST_TIMEOUT)
+                .body(ApiResponse.error(408, "操作超时，请稍后重试"));
+    }
+
+    // ---- 500 兜底 ----
+
+    /** 未预期的异常 */
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiResponse<Void>> handleUnknown(Exception ex) {
+        log.error("未预期异常", ex);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ApiResponse.error(500, "服务器内部错误: " + ex.getMessage()));
+    }
+}

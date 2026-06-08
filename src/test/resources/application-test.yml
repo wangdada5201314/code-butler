@@ -1,0 +1,11 @@
+# Test profile - 用于单元测试/集成测试
+# 禁用 AgentScope Agent 的自动初始化，由 @MockBean 替代
+
+agentscope:
+  workspace:
+    path: ${java.io.tmpdir}/.agentscope-test/workspace
+
+logging:
+  level:
+    root: warn
+    com.agent.codebutler: debug
