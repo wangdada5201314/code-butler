@@ -2,7 +2,7 @@
 
 > **审查日期**：2026-06-09  
 > **仓库路径**：`E:\AgentScopeProject\code-butler`  
-> **基线版本**：`522d568`（Initial commit v1.0，当前版本 2.0.0-SNAPSHOT）  
+> **基线版本**：`522d568`（Initial commit v1.0）  
 > **审查范围**：30 个 Java 源码 + 配置文件
 
 ---
