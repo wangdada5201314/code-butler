@@ -26,6 +26,7 @@ target/
 
 ### Logs ###
 *.log
+logs/
 
 ### Env ###
 .env
@@ -34,7 +35,16 @@ target/
 ### WorkBuddy ###
 .workbuddy/
 
+### Local config ###
+application-local.yml
+
 ### AgentScope ###
-.agentscope/*
-!.agentscope/workspace/
-!.agentscope/workspace/AGENTS.md
+.agentscope/
+
+### Junk ###
+nul
+
+### Frontend ###
+frontend/node_modules/
+frontend/.npm-cache/
+frontend/dist/

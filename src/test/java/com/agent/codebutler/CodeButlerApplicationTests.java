@@ -1,5 +1,6 @@
 package com.agent.codebutler;
 
+import com.agent.codebutler.service.UserService;
 import io.agentscope.harness.agent.HarnessAgent;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -12,6 +13,9 @@ class CodeButlerApplicationTests {
 
     @MockBean
     private HarnessAgent agent;
+
+    @MockBean
+    private UserService userService;
 
     @Test
     void contextLoads() {

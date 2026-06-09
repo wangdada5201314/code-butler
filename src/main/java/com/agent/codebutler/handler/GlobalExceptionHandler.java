@@ -85,6 +85,15 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.error(400, ex.getMessage()));
     }
 
+    /** 业务异常 */
+    @ExceptionHandler(com.agent.codebutler.exception.BusinessException.class)
+    public ResponseEntity<ApiResponse<Void>> handleBusinessException(
+            com.agent.codebutler.exception.BusinessException ex) {
+        log.warn("业务异常: code={}, message={}", ex.getCode(), ex.getMessage());
+        return ResponseEntity.badRequest()
+                .body(ApiResponse.error(ex.getCode(), ex.getMessage()));
+    }
+
     // ---- 408 类 ----
 
     /** 操作超时 */
@@ -95,13 +104,22 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.error(408, "操作超时，请稍后重试"));
     }
 
+    // ---- 404 类 ----
+
+    /** 静态资源不存在（如 favicon.ico），静默返回 404 */
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    public ResponseEntity<ApiResponse<Void>> handleNoResource(
+            org.springframework.web.servlet.resource.NoResourceFoundException ex) {
+        return ResponseEntity.notFound().build();
+    }
+
     // ---- 500 兜底 ----
 
-    /** 未预期的异常 */
+    /** 未预期的异常（不对外暴露异常细节，防止信息泄漏） */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleUnknown(Exception ex) {
-        log.error("未预期异常", ex);
+        log.error("未预期异常: {} - {}", ex.getClass().getSimpleName(), ex.getMessage(), ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ApiResponse.error(500, "服务器内部错误: " + ex.getMessage()));
+                .body(ApiResponse.error(500, "服务器内部错误，请联系管理员"));
     }
 }

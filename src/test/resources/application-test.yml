@@ -1,5 +1,13 @@
 # Test profile - 用于单元测试/集成测试
-# 禁用 AgentScope Agent 的自动初始化，由 @MockBean 替代
+
+# 禁用 MySQL + MyBatis + Redis + Session 自动配置（测试无需外部依赖）
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.session.SessionAutoConfiguration
+      - org.mybatis.spring.boot.autoconfigure.MybatisAutoConfiguration
 
 agentscope:
   workspace:

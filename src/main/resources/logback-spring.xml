@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    日志配置 (logback-spring.xml)
+    参考 Spring Boot 最佳实践，支持 springProfile 区分环境
+-->
+<configuration scan="true" scanPeriod="10 seconds">
+
+    <property name="log.path" value="logs"/>
+    <property name="maxHistory" value="30"/>
+    <property name="maxFileSize" value="30MB"/>
+
+    <!-- 控制台输出（开发环境彩色） -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %highlight(%-5level) [%thread] %cyan(%logger{36}) - %msg%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- 文件输出 INFO 及以上 -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${log.path}/code-butler-%d{yyyyMMdd}.%i.log.gz</fileNamePattern>
+            <maxHistory>${maxHistory}</maxHistory>
+            <maxFileSize>${maxFileSize}</maxFileSize>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- ====== 第三方库日志静音 ====== -->
+    <logger name="org.apache" level="WARN"/>
+    <logger name="com.aliyun" level="WARN"/>
+    <logger name="io.fabric8" level="WARN"/>
+    <logger name="okhttp3" level="WARN"/>
+    <logger name="io.netty" level="WARN"/>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
+    </root>
+
+</configuration>

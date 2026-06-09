@@ -5,9 +5,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -50,6 +48,8 @@ public class CodeScannerService {
 
     /**
      * 扫描仓库中的代码文件（带缓存）
+     * 使用 Files.walkFileTree + FileVisitor 在目录级别提前剪枝，
+     * 避免遍历被忽略目录内的文件。
      */
     public List<Path> scanCodeFiles(String repoPath) throws IOException {
         Path root = Paths.get(repoPath);
@@ -63,18 +63,39 @@ public class CodeScannerService {
             return cached.files;
         }
 
-        List<Path> files;
-        try (Stream<Path> stream = Files.walk(root).parallel()) {
-            files = stream
-                    .filter(Files::isRegularFile)
-                    .filter(this::isCodeFile)
-                    .filter(this::isNotIgnoredDir)
-                    .limit(MAX_SCAN_FILES)
-                    .collect(Collectors.toList());
-        }
+        List<Path> files = new ArrayList<>();
+        Files.walkFileTree(root, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
+                if (dir.equals(root)) return FileVisitResult.CONTINUE;
+                String dirName = dir.getFileName().toString();
+                if (IGNORE_DIRS.contains(dirName)) {
+                    return FileVisitResult.SKIP_SUBTREE;
+                }
+                return FileVisitResult.CONTINUE;
+            }
 
-        cache.put(repoPath, new CachedScan(files, System.currentTimeMillis()));
-        return files;
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                if (files.size() >= MAX_SCAN_FILES) {
+                    return FileVisitResult.TERMINATE;
+                }
+                if (isCodeFile(file)) {
+                    files.add(file);
+                }
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFileFailed(Path file, IOException exc) {
+                // 跳过无法访问的文件
+                return FileVisitResult.CONTINUE;
+            }
+        });
+
+        List<Path> result = List.copyOf(files);
+        cache.put(repoPath, new CachedScan(result, System.currentTimeMillis()));
+        return result;
     }
 
     /**
@@ -112,12 +133,20 @@ public class CodeScannerService {
 
     /**
      * 读取指定文件的内容并生成上下文
+     * 包含路径遍历防护：确保所有文件在仓库根目录之下
      */
     public String readFileContext(String repoPath, List<Path> files) throws IOException {
+        Path root = Paths.get(repoPath).toRealPath();
         StringBuilder sb = new StringBuilder();
         for (Path file : files) {
             try {
-                String content = Files.readString(file);
+                // 路径遍历防护：规范化路径确保文件在仓库之内
+                Path resolved = file.toRealPath();
+                if (!resolved.startsWith(root)) {
+                    log.warn("路径逃逸拦截: {}", file);
+                    continue;
+                }
+                String content = Files.readString(resolved);
                 sb.append("\n===== ").append(file.getFileName()).append(" =====\n");
                 sb.append(content).append("\n");
             } catch (IOException e) {
@@ -141,22 +170,9 @@ public class CodeScannerService {
 
     private boolean isCodeFile(Path path) {
         String name = path.getFileName().toString().toLowerCase();
-        // 处理复合后缀：.service.ts -> 先看完整后缀
-        for (String ext : CODE_EXTENSIONS) {
-            if (name.endsWith(ext)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean isNotIgnoredDir(Path path) {
-        for (int i = 0; i < path.getNameCount(); i++) {
-            if (IGNORE_DIRS.contains(path.getName(i).toString())) {
-                return false;
-            }
-        }
-        return true;
+        int dot = name.lastIndexOf('.');
+        if (dot < 0) return false;
+        return CODE_EXTENSIONS.contains(name.substring(dot));
     }
 
     /**

@@ -1,44 +1,115 @@
+# ============================================================
+# Code Butler — 应用主配置（提交 Git）
+# 
+# 层级：application.yml → application-local.yml → 环境变量
+# 
+# 敏感信息（数据库密码、API Key）请在 application-local.yml 中配置，
+# 该文件已加入 .gitignore，不会提交到仓库。
+# ============================================================
+
 server:
   port: 8080
+  servlet:
+    session:
+      cookie:
+        http-only: true                  # 防止 XSS 窃取 Cookie
+        secure: false                    # 本地开发 HTTP，生产环境改为 true
+        same-site: lax
 
 spring:
   application:
     name: code-butler
+  # 默认激活 local profile → 自动合并 application-local.yml
+  profiles:
+    active: local
 
-# CORS 跨域配置
+  # ── Session ──
+  session:
+    store-type: redis
+    timeout: 2592000                     # 30 天
+
+  # ── Redis（实际值在 application-local.yml）──
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DATABASE:0}
+      password: ${REDIS_PASSWORD:}
+
+  # ── MySQL（实际值在 application-local.yml）──
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${MYSQL_URL:jdbc:mysql://localhost:3306/code_butler}
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:}
+    type: com.alibaba.druid.pool.DruidDataSource
+    druid:
+      # 连接池基础配置
+      initial-size: 5
+      min-idle: 5
+      max-active: 20
+      max-wait: 60000
+      # 空闲检测
+      time-between-eviction-runs-millis: 60000
+      min-evictable-idle-time-millis: 300000
+      # 连接有效性检测
+      validation-query: SELECT 1
+      test-while-idle: true
+      test-on-borrow: false
+      test-on-return: false
+      # 过滤器
+      filters: stat,wall,slf4j
+      # StatViewServlet 监控页面
+      stat-view-servlet:
+        enabled: true
+        url-pattern: /druid/*
+        login-username: ${DRUID_USERNAME:admin}
+        login-password: ${DRUID_PASSWORD:admin}
+      # WebStatFilter 监控
+      web-stat-filter:
+        enabled: true
+        url-pattern: /*
+        exclusions: "*.js,*.gif,*.jpg,*.png,*.css,*.ico,/druid/*"
+      # 连接池状态过滤器
+      filter:
+        stat:
+          slow-sql-millis: 3000
+          log-slow-sql: true
+        wall:
+          enabled: true
+
+# ── MyBatis-Flex ──
+mybatis-flex:
+  configuration:
+    map-underscore-to-camel-case: true
+
+# ── CORS ──
 cors:
   allowed-origins: "*"
 
-# AgentScope 配置
+# ── AgentScope ──
 agentscope:
-  # 模型配置
   model:
-    # 默认模型：dashscope（通义千问），支持 openai / anthropic / gemini
-    default: dashscope:qwen-plus
-
-  # Agent 调用超时（秒），交互式审查可能较慢
+    default: ${AGENTSCOPE_MODEL:openai:deepseek-chat}
   call-timeout-seconds: 120
-
-  # 工作区路径（Agent 人格、技能、日志存放位置）
   workspace:
     path: .agentscope/workspace
-
-  # 内存压缩配置
   compaction:
     trigger-messages: 30
     keep-messages: 10
 
-# DashScope API Key（通过环境变量 DASHSCOPE_API_KEY 注入，此处仅声明默认值）
-# 也可在 application-{profile}.yml 中覆盖
+# ── API Key（优先级：环境变量 > application-local.yml > 此处占位符）──
 dashscope:
   api-key: ${DASHSCOPE_API_KEY:}
+openai:
+  api-key: ${OPENAI_API_KEY:}
+  base-url: ${OPENAI_BASE_URL:}
 
-# Git 操作配置
+# ── Git ──
 git:
-  # Git 命令超时（秒）
   command-timeout-seconds: 30
 
-# Actuator 健康检查
+# ── Actuator ──
 management:
   endpoints:
     web:
@@ -48,7 +119,8 @@ management:
     health:
       show-details: when_authorized
 
+# ── 日志（生产级别；本地开发可在 application-local.yml 覆盖为 DEBUG）──
 logging:
   level:
-    io.agentscope: debug
-    com.agent.codebutler: debug
+    root: info
+    com.agent.codebutler: info

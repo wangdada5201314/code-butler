@@ -29,9 +29,9 @@ public class GitService {
     @Value("${git.command-timeout-seconds:30}")
     private int commandTimeoutSeconds;
 
-    /** 路径遍历攻击检测：禁止 .. 和绝对路径中的敏感目录 */
+    /** 路径遍历攻击和命令注入检测：禁止 ..、shell 特殊字符、敏感系统目录 */
     private static final Pattern ILLEGAL_PATH_PATTERN = Pattern.compile(
-            "(\\.\\.)|([;|&`$(){}])|(/etc/)|(/proc/)|(/sys/)");
+            "(\\.\\.)|([;|&`$(){}<>!])|(/etc/)|(/proc/)|(/sys/)");
 
     // ---- 公共 API ----
 
@@ -188,13 +188,22 @@ public class GitService {
             }
         } catch (InvalidPathException e) {
             throw new IllegalArgumentException("无效的路径格式: " + repoPath);
-        } catch (Exception e) {
-            // 路径可能尚不存在（对于新仓库是合理的），仅做语法检查
+        } catch (java.nio.file.NoSuchFileException e) {
+            // 路径不存在时，做语法级校验（normalize 检查是否含可疑片段）
             try {
-                Paths.get(repoPath);
+                Path normalized = Paths.get(repoPath).toAbsolutePath().normalize();
+                String normalizedStr = normalized.toString();
+                if (normalizedStr.contains("..")) {
+                    throw new IllegalArgumentException("仓库路径包含非法字符: " + repoPath);
+                }
             } catch (InvalidPathException ex) {
                 throw new IllegalArgumentException("无效的路径格式: " + repoPath);
             }
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            // 其他 IO 异常，保守拒绝
+            throw new IllegalArgumentException("无法验证仓库路径: " + repoPath);
         }
     }
 
