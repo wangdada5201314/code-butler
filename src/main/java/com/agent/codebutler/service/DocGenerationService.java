@@ -25,13 +25,17 @@ public class DocGenerationService {
 
     private final HarnessAgent agent;
     private final CodeScannerService codeScanner;
+    private final OperationRecordService operationRecordService;
 
     @Value("${agentscope.call-timeout-seconds:120}")
     private int agentCallTimeoutSeconds;
 
-    public DocGenerationService(HarnessAgent agent, CodeScannerService codeScanner) {
+    public DocGenerationService(HarnessAgent agent,
+                                CodeScannerService codeScanner,
+                                OperationRecordService operationRecordService) {
         this.agent = agent;
         this.codeScanner = codeScanner;
+        this.operationRecordService = operationRecordService;
     }
 
     public boolean isValidDocType(String docType) {
@@ -44,13 +48,18 @@ public class DocGenerationService {
 
     /**
      * 为指定仓库生成文档
+     *
+     * @param repoPath 仓库路径
+     * @param docType  文档类型
+     * @param userId   当前登录用户 ID（可为 null）
      */
-    public DocGenerateResult generate(String repoPath, String docType) throws Exception {
+    public DocGenerateResult generate(String repoPath, String docType, Long userId) throws Exception {
         GitService.validateRepoPath(repoPath);
 
         String sessionId = "docs-" + UUID.randomUUID().toString().substring(0, 8);
-        log.info("开始文档生成: sessionId={}, repoPath={}, docType={}", sessionId, repoPath, docType);
+        log.info("开始文档生成: sessionId={}, repoPath={}, docType={}, userId={}", sessionId, repoPath, docType, userId);
 
+        long startTime = System.currentTimeMillis();
         String overview = codeScanner.getRepoOverview(repoPath);
 
         String prompt = String.format("""
@@ -66,9 +75,11 @@ public class DocGenerationService {
                 - 如果是其他文档类型：按照该类型的标准格式生成
                 """, docType, overview);
 
+        // 使用实际用户 ID 绑定 Agent 记忆
+        String agentUserId = userId != null ? "doc-" + userId : "doc-generator";
         RuntimeContext ctx = RuntimeContext.builder()
                 .sessionId(sessionId)
-                .userId("doc-generator")
+                .userId(agentUserId)
                 .build();
 
         String result = CodeReviewService.extractText(
@@ -76,7 +87,12 @@ public class DocGenerationService {
                         .timeout(Duration.ofSeconds(agentCallTimeoutSeconds))
                         .block());
 
-        log.info("文档生成完成: sessionId={}", sessionId);
+        long durationMs = System.currentTimeMillis() - startTime;
+        log.info("文档生成完成: sessionId={}, duration={}ms", sessionId, durationMs);
+
+        // 异步记录操作历史
+        operationRecordService.recordAsync(userId, "DOC", repoPath,
+                docType, result, durationMs, sessionId, "COMPLETED");
 
         return DocGenerateResult.builder()
                 .sessionId(sessionId)

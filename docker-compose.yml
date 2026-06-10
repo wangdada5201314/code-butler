@@ -19,7 +19,7 @@ services:
       - --init-connect='SET NAMES utf8mb4'
       - --skip-character-set-client-handshake
     environment:
-      MYSQL_ROOT_PASSWORD: 123456
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
       MYSQL_DATABASE: code_butler
     volumes:
       - mysql_data:/var/lib/mysql

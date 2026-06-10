@@ -3,6 +3,7 @@ package com.agent.codebutler.controller;
 import com.agent.codebutler.service.ChatService;
 import com.agent.codebutler.service.CodeReviewService;
 import com.agent.codebutler.service.DocGenerationService;
+import com.agent.codebutler.service.OperationRecordService;
 import com.agent.codebutler.service.UserService;
 import com.agent.codebutler.aop.AuthInterceptor;
 import com.agent.codebutler.model.entity.User;
@@ -43,6 +44,9 @@ class CodeButlerControllerTest {
 
     @MockBean
     private UserService userService;
+
+    @MockBean
+    private OperationRecordService operationRecordService;
 
     @BeforeEach
     void setUp() {
@@ -88,7 +92,7 @@ class CodeButlerControllerTest {
         var result = new com.agent.codebutler.dto.DocGenerateResult();
         result.setDocType("README");
         result.setDocument("# Test Doc");
-        when(docGenerationService.generate(any(), any())).thenReturn(result);
+        when(docGenerationService.generate(any(), any(), any())).thenReturn(result);
         when(docGenerationService.isValidDocType("README")).thenReturn(true);
 
         mockMvc.perform(post("/api/code/docs")

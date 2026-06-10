@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   CardContent, Typography, TextField, Button, Box, CircularProgress,
-  Alert, Chip, LinearProgress,
+  Alert, LinearProgress,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import BugReportIcon from '@mui/icons-material/BugReport';
@@ -27,11 +27,17 @@ export default function ReviewPanel({ darkMode }) {
   };
 
   return (
-    <div className="glass-card" style={{ height: '100%' }}>
-      <CardContent sx={{ p: '20px 24px !important' }}>
+    <div className="forge-card" style={{ height: '100%' }}>
+      <CardContent sx={{ p: '22px 24px !important' }}>
         {/* Header */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2.5 }}>
-          <BugReportIcon sx={{ color: '#6366f1', fontSize: 22 }} />
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, mb: 2.5 }}>
+          <Box sx={{
+            width: 32, height: 32, borderRadius: 1.5,
+            background: 'rgba(212,160,83,0.12)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <BugReportIcon sx={{ color: 'var(--accent)', fontSize: 18 }} />
+          </Box>
           <Typography className="section-title">代码审查</Typography>
         </Box>
 
@@ -53,14 +59,22 @@ export default function ReviewPanel({ darkMode }) {
             disabled={loading}
             className="gradient-btn"
             sx={{ minWidth: 130 }}
-            startIcon={loading ? <CircularProgress size={16} sx={{ color: '#fff' }} /> : <SearchIcon />}
+            startIcon={loading ? <CircularProgress size={16} sx={{ color: '#0c0b0e' }} /> : <SearchIcon />}
           >
             {loading ? '审查中...' : '开始审查'}
           </Button>
         </Box>
 
         {/* Loading bar */}
-        {loading && <LinearProgress sx={{ mb: 2, borderRadius: 2, height: 4 }} />}
+        {loading && (
+          <LinearProgress
+            sx={{
+              mb: 2, borderRadius: 2, height: 3,
+              bgcolor: 'rgba(212,160,83,0.1)',
+              '& .MuiLinearProgress-bar': { bgcolor: 'var(--accent)' },
+            }}
+          />
+        )}
 
         {/* Error */}
         {error && (
@@ -71,27 +85,39 @@ export default function ReviewPanel({ darkMode }) {
         {result && (
           <Box>
             <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
-              <Chip label={`Session: ${result.sessionId || '-'}`} size="small"
-                sx={{ bgcolor: 'rgba(99,102,241,0.1)', color: '#6366f1', fontWeight: 600 }} />
-              <Chip label={`仓库: ${result.repoPath || '-'}`} size="small"
-                sx={{ bgcolor: 'rgba(59,130,246,0.1)', color: '#2563eb', fontWeight: 600 }} />
+              <Box sx={{
+                px: 1.5, py: 0.4, borderRadius: 1,
+                bgcolor: 'rgba(212,160,83,0.1)', border: '1px solid rgba(212,160,83,0.15)',
+              }}>
+                <Typography sx={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--accent)' }}>
+                  {result.sessionId ? `Session: ${result.sessionId}` : 'Session: -'}
+                </Typography>
+              </Box>
+              <Box sx={{
+                px: 1.5, py: 0.4, borderRadius: 1,
+                bgcolor: 'rgba(45,212,191,0.08)', border: '1px solid rgba(45,212,191,0.12)',
+              }}>
+                <Typography sx={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--accent-secondary)' }}>
+                  {result.repoPath || '-'}
+                </Typography>
+              </Box>
             </Box>
             <Box
               component="pre"
+              className="custom-scrollbar"
               sx={{
-                p: 2,
+                p: 2.5,
                 borderRadius: 2,
-                bgcolor: darkMode ? 'rgba(30,41,59,0.6)' : 'rgba(248,250,252,0.8)',
-                border: '1px solid',
-                borderColor: darkMode ? 'rgba(71,85,105,0.5)' : 'rgba(203,213,225,0.8)',
+                bgcolor: 'rgba(0,0,0,0.25)',
+                border: '1px solid var(--border-subtle)',
                 fontSize: '0.82rem',
                 lineHeight: 1.8,
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
                 maxHeight: 500,
                 overflow: 'auto',
-                color: darkMode ? '#e2e8f0' : '#334155',
-                fontFamily: '"JetBrains Mono", "Noto Sans SC", monospace',
+                color: 'var(--text-primary)',
+                fontFamily: 'var(--font-code)',
               }}
             >
               {result.review || '审查结果为空'}
@@ -101,9 +127,16 @@ export default function ReviewPanel({ darkMode }) {
 
         {/* Empty state */}
         {!loading && !error && !result && (
-          <Box sx={{ textAlign: 'center', py: 4 }}>
-            <BugReportIcon sx={{ fontSize: 40, color: darkMode ? '#334155' : '#cbd5e1', mb: 1 }} />
-            <Typography variant="body2" sx={{ color: darkMode ? '#64748b' : '#94a3b8' }}>
+          <Box sx={{ textAlign: 'center', py: 5 }}>
+            <Box sx={{
+              width: 52, height: 52, borderRadius: 2, mx: 'auto', mb: 2,
+              background: 'rgba(212,160,83,0.06)',
+              border: '1px solid rgba(212,160,83,0.1)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <BugReportIcon sx={{ fontSize: 24, color: 'var(--text-muted)' }} />
+            </Box>
+            <Typography sx={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
               输入仓库路径并点击「开始审查」
             </Typography>
           </Box>

@@ -5,12 +5,14 @@ import com.agent.codebutler.dto.ApiResponse;
 import com.agent.codebutler.dto.CodeChatRequest;
 import com.agent.codebutler.dto.CodeReviewResult;
 import com.agent.codebutler.dto.DocGenerateResult;
-import com.agent.codebutler.service.ChatService;
-import com.agent.codebutler.service.CodeReviewService;
-import com.agent.codebutler.service.DocGenerationService;
+import com.agent.codebutler.model.entity.OperationRecord;
+import com.agent.codebutler.model.vo.OperationRecordVO;
+import com.agent.codebutler.service.*;
+import com.mybatisflex.core.paginate.Page;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.slf4j.Logger;
@@ -20,6 +22,8 @@ import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/code")
@@ -32,13 +36,19 @@ public class CodeButlerController {
     private final CodeReviewService codeReviewService;
     private final DocGenerationService docGenerationService;
     private final ChatService chatService;
+    private final UserService userService;
+    private final OperationRecordService operationRecordService;
 
     public CodeButlerController(CodeReviewService codeReviewService,
                                 DocGenerationService docGenerationService,
-                                ChatService chatService) {
+                                ChatService chatService,
+                                UserService userService,
+                                OperationRecordService operationRecordService) {
         this.codeReviewService = codeReviewService;
         this.docGenerationService = docGenerationService;
         this.chatService = chatService;
+        this.userService = userService;
+        this.operationRecordService = operationRecordService;
     }
 
     @PostMapping("/review")
@@ -46,9 +56,11 @@ public class CodeButlerController {
     @Operation(summary = "代码审查", description = "对指定仓库路径进行全面的代码审查")
     public ApiResponse<CodeReviewResult> review(
             @RequestParam @NotBlank(message = "仓库路径不能为空")
-            @Parameter(description = "仓库本地路径") String repoPath) {
+            @Parameter(description = "仓库本地路径") String repoPath,
+            HttpServletRequest request) {
         try {
-            CodeReviewResult result = codeReviewService.review(repoPath);
+            Long userId = userService.getLoginUserIdOrNull(request);
+            CodeReviewResult result = codeReviewService.review(repoPath, userId);
             return ApiResponse.success(result);
         } catch (Exception e) {
             log.error("代码审查失败: repoPath={}", repoPath, e);
@@ -59,8 +71,10 @@ public class CodeButlerController {
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @AuthCheck(mustRole = "user")
     @Operation(summary = "流式问答", description = "基于 SSE 的流式代码问答，实时返回 AI 分析结果")
-    public Flux<ServerSentEvent<String>> chatStream(@Valid @RequestBody CodeChatRequest request) {
-        return chatService.streamChat(request);
+    public Flux<ServerSentEvent<String>> chatStream(@Valid @RequestBody CodeChatRequest request,
+                                                     HttpServletRequest httpRequest) {
+        Long userId = userService.getLoginUserIdOrNull(httpRequest);
+        return chatService.streamChat(request, userId);
     }
 
     @PostMapping("/docs")
@@ -70,7 +84,8 @@ public class CodeButlerController {
             @RequestParam @NotBlank(message = "仓库路径不能为空")
             @Parameter(description = "仓库本地路径") String repoPath,
             @RequestParam(defaultValue = "README")
-            @Parameter(description = "文档类型", example = "README") String docType) {
+            @Parameter(description = "文档类型", example = "README") String docType,
+            HttpServletRequest request) {
 
         if (!docGenerationService.isValidDocType(docType)) {
             return ApiResponse.error(400, "不支持的文档类型: " + docType
@@ -78,11 +93,50 @@ public class CodeButlerController {
         }
 
         try {
-            DocGenerateResult result = docGenerationService.generate(repoPath, docType);
+            Long userId = userService.getLoginUserIdOrNull(request);
+            DocGenerateResult result = docGenerationService.generate(repoPath, docType, userId);
             return ApiResponse.success(result);
         } catch (Exception e) {
             log.error("文档生成失败: repoPath={}, docType={}", repoPath, docType, e);
             return ApiResponse.error(500, "文档生成失败: " + e.getMessage());
         }
+    }
+
+    @GetMapping("/history")
+    @AuthCheck(mustRole = "user")
+    @Operation(summary = "操作历史", description = "分页查询当前用户的 AI 操作历史记录")
+    public ApiResponse<Page<OperationRecordVO>> getHistory(
+            @RequestParam(defaultValue = "1") @Parameter(description = "页码") int page,
+            @RequestParam(defaultValue = "20") @Parameter(description = "每页数量") int pageSize,
+            HttpServletRequest request) {
+        Long userId = userService.getLoginUserIdOrNull(request);
+        if (userId == null) {
+            return ApiResponse.error(40100, "请先登录");
+        }
+
+        Page<OperationRecord> recordPage = operationRecordService.getUserHistory(userId, page, pageSize);
+
+        // 将实体转换为 VO（脱敏，不返回内部字段）
+        List<OperationRecordVO> voList = recordPage.getRecords().stream()
+                .map(r -> OperationRecordVO.builder()
+                        .id(r.getId())
+                        .opType(r.getOpType())
+                        .repoPath(r.getRepoPath())
+                        .input(r.getInput())
+                        .outputSummary(r.getOutputSummary())
+                        .status(r.getStatus())
+                        .durationMs(r.getDurationMs())
+                        .sessionId(r.getSessionId())
+                        .createTime(r.getCreateTime())
+                        .build())
+                .toList();
+
+        Page<OperationRecordVO> voPage = new Page<>();
+        voPage.setRecords(voList);
+        voPage.setPageNumber(recordPage.getPageNumber());
+        voPage.setPageSize(recordPage.getPageSize());
+        voPage.setTotalRow(recordPage.getTotalRow());
+
+        return ApiResponse.success(voPage);
     }
 }

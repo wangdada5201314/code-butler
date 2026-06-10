@@ -1,35 +1,24 @@
 import React, { useState } from 'react';
-import {
-  Dialog, DialogTitle, DialogContent, TextField, Button, Box, Typography,
-  Alert, Tabs, Tab, IconButton,
-} from '@mui/material';
+import { Dialog, Box, Typography } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { useLoginUser } from '../stores/useLoginUser.jsx';
 
 /**
- * Login/Register modal dialog.
- * @param {{ open: boolean, onClose: () => void, darkMode: boolean }} props
+ * Fallback login modal (shown when API returns 401).
+ * Uses the same design language as the split-screen login.
  */
-export default function LoginModal({ open, onClose, darkMode }) {
-  const [tab, setTab] = useState(0); // 0=login, 1=register
+export default function LoginModal({ open, onClose }) {
   const [userAccount, setUserAccount] = useState('');
   const [userPassword, setUserPassword] = useState('');
-  const [checkPassword, setCheckPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-
-  const { login, register, fetchLoginUser } = useLoginUser();
-
-  const resetForm = () => {
-    setUserAccount('');
-    setUserPassword('');
-    setCheckPassword('');
-    setError('');
-    setSubmitting(false);
-  };
+  const { login } = useLoginUser();
 
   const handleClose = () => {
-    resetForm();
+    setUserAccount('');
+    setUserPassword('');
+    setError('');
+    setSubmitting(false);
     onClose();
   };
 
@@ -37,98 +26,117 @@ export default function LoginModal({ open, onClose, darkMode }) {
     e.preventDefault();
     setError('');
     setSubmitting(true);
-
     try {
-      if (tab === 0) {
-        // Login
-        await login(userAccount, userPassword);
-      } else {
-        // Register
-        if (userPassword !== checkPassword) {
-          setError('两次输入的密码不一致');
-          setSubmitting(false);
-          return;
-        }
-        await register(userAccount, userPassword, checkPassword);
-        // After registration, auto login
-        await login(userAccount, userPassword);
-      }
+      await login(userAccount, userPassword);
       handleClose();
     } catch (err) {
-      setError(err.message || '操作失败');
+      setError(err.message || '登录失败');
       setSubmitting(false);
     }
   };
 
+  const inputStyle = {
+    width: '100%', padding: '11px 14px', borderRadius: 'var(--radius-input)',
+    border: '1px solid var(--border-subtle)', background: 'rgba(255,255,255,0.04)',
+    color: 'var(--text-primary)', fontFamily: 'var(--font-body)', fontSize: '0.9rem',
+    outline: 'none', transition: 'border-color 0.2s',
+  };
+
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth>
-      <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 0 }}>
-        <Tabs value={tab} onChange={(_, v) => { setTab(v); setError(''); }}>
-          <Tab label="登录" />
-          <Tab label="注册" />
-        </Tabs>
-        <IconButton size="small" onClick={handleClose}>
-          <CloseIcon fontSize="small" />
-        </IconButton>
-      </DialogTitle>
+    <Dialog
+      open={open}
+      onClose={handleClose}
+      maxWidth="xs"
+      fullWidth
+      PaperProps={{
+        sx: {
+          background: 'var(--bg-surface)',
+          backdropFilter: 'blur(20px)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: 'var(--radius-card)',
+          p: 0,
+        },
+      }}
+    >
+      <Box sx={{ p: '28px 28px 24px' }}>
+        {/* Close button */}
+        <Box
+          onClick={handleClose}
+          sx={{
+            position: 'absolute', top: 16, right: 16,
+            width: 28, height: 28, borderRadius: '50%',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', color: 'var(--text-muted)',
+            transition: 'all 0.2s',
+            '&:hover': { color: 'var(--text-primary)', bgcolor: 'rgba(255,255,255,0.06)' },
+          }}
+        >
+          <CloseIcon sx={{ fontSize: 16 }} />
+        </Box>
 
-      <DialogContent>
-        <Box component="form" onSubmit={handleSubmit} sx={{ mt: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {error && <Alert severity="error" sx={{ borderRadius: 1 }}>{error}</Alert>}
+        <Typography
+          sx={{
+            fontFamily: 'var(--font-display)',
+            fontSize: '1.3rem', fontWeight: 700,
+            color: 'var(--text-primary)', mb: 0.5,
+          }}
+        >
+          需要登录
+        </Typography>
+        <Typography sx={{ fontSize: '0.82rem', color: 'var(--text-muted)', mb: 3 }}>
+          此操作需要登录账号后使用
+        </Typography>
 
-          <TextField
-            label="账号"
-            value={userAccount}
-            onChange={(e) => setUserAccount(e.target.value)}
-            required
-            fullWidth
-            size="small"
-            autoFocus
-            inputProps={{ minLength: 4 }}
-          />
-
-          <TextField
-            label="密码"
-            type="password"
-            value={userPassword}
-            onChange={(e) => setUserPassword(e.target.value)}
-            required
-            fullWidth
-            size="small"
-            inputProps={{ minLength: 8 }}
-          />
-
-          {tab === 1 && (
-            <TextField
-              label="确认密码"
-              type="password"
-              value={checkPassword}
-              onChange={(e) => setCheckPassword(e.target.value)}
-              required
-              fullWidth
-              size="small"
-              inputProps={{ minLength: 8 }}
-            />
+        <Box component="form" onSubmit={handleSubmit} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {error && (
+            <Box sx={{ p: '10px 14px', borderRadius: 'var(--radius-btn)', bgcolor: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.2)' }}>
+              <Typography sx={{ fontSize: '0.82rem', color: '#fca5a5' }}>{error}</Typography>
+            </Box>
           )}
 
-          <Button
+          <Box>
+            <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', mb: 0.8 }}>账号</Typography>
+            <input
+              type="text"
+              value={userAccount}
+              onChange={(e) => setUserAccount(e.target.value)}
+              required
+              autoFocus
+              placeholder="输入你的账号"
+              style={inputStyle}
+              onFocus={(e) => e.target.style.borderColor = 'var(--accent)'}
+              onBlur={(e) => e.target.style.borderColor = 'var(--border-subtle)'}
+            />
+          </Box>
+
+          <Box>
+            <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', mb: 0.8 }}>密码</Typography>
+            <input
+              type="password"
+              value={userPassword}
+              onChange={(e) => setUserPassword(e.target.value)}
+              required
+              placeholder="输入密码"
+              style={inputStyle}
+              onFocus={(e) => e.target.style.borderColor = 'var(--accent)'}
+              onBlur={(e) => e.target.style.borderColor = 'var(--border-subtle)'}
+            />
+          </Box>
+
+          <button
             type="submit"
-            variant="contained"
-            fullWidth
             disabled={submitting}
             className="gradient-btn"
-            sx={{ mt: 1, p: '10px !important' }}
+            style={{ width: '100%', padding: '11px', border: 'none', cursor: submitting ? 'not-allowed' : 'pointer', fontSize: '0.9rem' }}
           >
-            {submitting ? '处理中...' : tab === 0 ? '登 录' : '注 册'}
-          </Button>
+            {submitting ? '处理中...' : '登 录'}
+          </button>
 
-          {tab === 0 && (
-            <Typography variant="caption" sx={{ textAlign: 'center', color: 'var(--text-muted)' }}>
-              测试账号: user / 12345678
-            </Typography>
-          )}
+          <Typography sx={{ fontSize: '0.72rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+            测试账号: user / 12345678
+          </Typography>
         </Box>
-      </DialogContent>
+      </Box>
     </Dialog>
   );
 }

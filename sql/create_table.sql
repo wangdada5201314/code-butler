@@ -22,3 +22,21 @@ CREATE TABLE IF NOT EXISTS user (
 INSERT INTO user VALUES
 (1, 'admin', '0489e82fd1e35d704975f8259259774d', '管理员', NULL, 'admin', NOW(), NOW(), NOW(), 0),
 (2, 'user',  '0489e82fd1e35d704975f8259259774d', '普通用户', NULL, 'user', NOW(), NOW(), NOW(), 0);
+
+-- ============================================================
+-- 操作历史记录表 —— 记录用户的 AI 审查/问答/文档生成操作
+-- ============================================================
+CREATE TABLE IF NOT EXISTS operation_record (
+    id            BIGINT AUTO_INCREMENT PRIMARY KEY,
+    userId        BIGINT DEFAULT 0 NOT NULL,
+    opType        VARCHAR(32) NOT NULL COMMENT '操作类型: REVIEW / CHAT / DOC',
+    repoPath      VARCHAR(512) DEFAULT '' COMMENT '仓库路径',
+    input         TEXT COMMENT '用户输入（提问内容 / 文档类型）',
+    outputSummary TEXT COMMENT 'AI 输出摘要（前 500 字）',
+    status        VARCHAR(16) DEFAULT 'COMPLETED' COMMENT '状态: COMPLETED / FAILED / TIMEOUT',
+    durationMs    INT DEFAULT 0 COMMENT '耗时（毫秒）',
+    sessionId     VARCHAR(64) COMMENT 'Agent 会话 ID',
+    createTime    DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    INDEX idx_userId_createTime (userId, createTime),
+    INDEX idx_opType (opType)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI 操作历史记录';

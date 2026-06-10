@@ -29,22 +29,28 @@ public class ChatService {
     private final HarnessAgent agent;
     private final CodeScannerService codeScanner;
     private final GitService gitService;
+    private final OperationRecordService operationRecordService;
 
     @Value("${agentscope.call-timeout-seconds:120}")
     private int agentCallTimeoutSeconds;
 
     public ChatService(HarnessAgent agent,
                        CodeScannerService codeScanner,
-                       GitService gitService) {
+                       GitService gitService,
+                       OperationRecordService operationRecordService) {
         this.agent = agent;
         this.codeScanner = codeScanner;
         this.gitService = gitService;
+        this.operationRecordService = operationRecordService;
     }
 
     /**
      * 执行流式问答，返回标准 SSE 事件流
+     *
+     * @param request 问答请求
+     * @param userId  当前登录用户 ID（可为 null）
      */
-    public Flux<ServerSentEvent<String>> streamChat(CodeChatRequest request) {
+    public Flux<ServerSentEvent<String>> streamChat(CodeChatRequest request, Long userId) {
         String sessionId = request.getSessionId() != null
                 ? request.getSessionId()
                 : "chat-" + UUID.randomUUID().toString().substring(0, 8);
@@ -53,7 +59,14 @@ public class ChatService {
         String question = request.getQuestion();
 
         GitService.validateRepoPath(repoPath);
-        log.info("开始流式问答: sessionId={}, repoPath={}", sessionId, repoPath);
+        log.info("开始流式问答: sessionId={}, repoPath={}, userId={}", sessionId, repoPath, userId);
+
+        // 记录操作历史（流式场景在开始时记录，状态标记为 COMPLETED）
+        operationRecordService.recordAsync(userId, "CHAT", repoPath,
+                question, null, 0, sessionId, "COMPLETED");
+
+        // 使用实际用户 ID 绑定 Agent 记忆，让 AI 逐步了解用户的提问风格和关注点
+        String agentUserId = userId != null ? "chat-" + userId : "code-chat";
 
         return Mono.fromCallable(() -> {
                     String overview = codeScanner.getRepoOverview(repoPath);
@@ -73,28 +86,28 @@ public class ChatService {
 
                     RuntimeContext ctx = RuntimeContext.builder()
                             .sessionId(sessionId)
-                            .userId("code-chat")
+                            .userId(agentUserId)
                             .build();
 
                     return agent.streamEvents(new UserMessage(prompt), ctx);
                 })
                 .flatMapMany(flux -> flux
-                        .map(event -> {
+                        .flatMap(event -> {
                             if (event.getType() == AgentEventType.TEXT_BLOCK_DELTA) {
                                 String delta = ((TextBlockDeltaEvent) event).getDelta();
-                                return ServerSentEvent.<String>builder()
+                                return Mono.just(ServerSentEvent.<String>builder()
                                         .data(delta)
-                                        .build();
+                                        .build());
                             } else if (event.getType() == AgentEventType.TOOL_CALL_START) {
                                 String toolName = ((ToolCallStartEvent) event).getToolCallName();
-                                return ServerSentEvent.<String>builder()
+                                return Mono.just(ServerSentEvent.<String>builder()
                                         .event("tool")
                                         .data("[调用工具: " + toolName + "]")
-                                        .build();
+                                        .build());
                             }
-                            return null;
+                            // 跳过其他事件类型（思考、完成等），不发出任何元素
+                            return Mono.<ServerSentEvent<String>>empty();
                         })
-                        .filter(e -> e != null)
                         .concatWith(Flux.just(
                                 ServerSentEvent.<String>builder()
                                         .event("done")

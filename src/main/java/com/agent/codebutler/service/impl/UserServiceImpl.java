@@ -143,6 +143,18 @@ public class UserServiceImpl implements UserService {
         return true;
     }
 
+    @Override
+    public Long getLoginUserIdOrNull(HttpServletRequest request) {
+        Object userObj = request.getSession().getAttribute(UserConstant.USER_LOGIN_STATE);
+        if (userObj instanceof LoginUserVO loginVO) {
+            return loginVO.getId();
+        }
+        if (userObj instanceof User user) {
+            return user.getId();
+        }
+        return null;
+    }
+
     /**
      * MD5 + Salt 加密
      */

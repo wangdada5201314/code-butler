@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { CardContent, Typography, Box, CircularProgress } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
-import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import { checkHealth } from '../api/client.js';
 
 export default function HealthCard({ darkMode }) {
@@ -32,40 +31,46 @@ export default function HealthCard({ darkMode }) {
   const isHealthy = !error && health !== null;
 
   return (
-    <div className={isHealthy ? 'gradient-border-card' : 'glass-card'}>
-      <CardContent sx={{ p: '16px 24px !important' }}>
+    <div className={isHealthy ? 'gradient-border-card' : 'forge-card'}>
+      <CardContent sx={{ p: '14px 24px !important' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
             {loading ? (
-              <CircularProgress size={20} sx={{ color: '#6366f1' }} />
+              <CircularProgress size={18} sx={{ color: 'var(--accent)' }} />
             ) : isHealthy ? (
               <Box sx={{ position: 'relative' }}>
-                <CheckCircleIcon sx={{ fontSize: 22, color: '#22c55e', zIndex: 1, position: 'relative' }} />
+                <CheckCircleIcon sx={{ fontSize: 20, color: 'var(--success)', zIndex: 1, position: 'relative' }} />
                 <Box
                   sx={{
-                    position: 'absolute', top: -4, left: -4, width: 30, height: 30,
-                    borderRadius: '50%', bgcolor: 'rgba(34,197,94,0.15)',
-                    animation: 'pulseGlow 2s ease-in-out infinite',
+                    position: 'absolute', top: -3, left: -3, width: 26, height: 26,
+                    borderRadius: '50%', bgcolor: 'rgba(74,222,128,0.12)',
+                    animation: 'forgeGlow 2.5s ease-in-out infinite',
                   }}
                 />
               </Box>
             ) : (
               <Box sx={{ position: 'relative' }}>
-                <ErrorIcon sx={{ fontSize: 22, color: '#ef4444', zIndex: 1, position: 'relative' }} />
+                <ErrorIcon sx={{ fontSize: 20, color: 'var(--danger)', zIndex: 1, position: 'relative' }} />
                 <Box
                   sx={{
-                    position: 'absolute', top: -4, left: -4, width: 30, height: 30,
-                    borderRadius: '50%', bgcolor: 'rgba(239,68,68,0.15)',
+                    position: 'absolute', top: -3, left: -3, width: 26, height: 26,
+                    borderRadius: '50%', bgcolor: 'rgba(248,113,113,0.12)',
                   }}
                 />
               </Box>
             )}
 
             <Box>
-              <Typography className="section-title" sx={{ fontSize: '0.95rem' }}>
+              <Typography
+                sx={{
+                  fontFamily: 'var(--font-display)',
+                  fontSize: '0.9rem', fontWeight: 700,
+                  color: 'var(--text-primary)',
+                }}
+              >
                 服务健康状态
               </Typography>
-              <Typography variant="caption" sx={{ color: darkMode ? '#94a3b8' : '#64748b' }}>
+              <Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>
                 每 30 秒自动检测
               </Typography>
             </Box>
@@ -75,20 +80,16 @@ export default function HealthCard({ darkMode }) {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             {!loading && (
               <>
-                <FiberManualRecordIcon
-                  sx={{
-                    fontSize: 10,
-                    color: isHealthy ? '#22c55e' : '#ef4444',
-                    filter: `drop-shadow(0 0 4px ${isHealthy ? '#22c55e' : '#ef4444'})`,
-                  }}
-                />
+                <Box sx={{
+                  width: 8, height: 8, borderRadius: '50%',
+                  bgcolor: isHealthy ? 'var(--success)' : 'var(--danger)',
+                  boxShadow: `0 0 8px ${isHealthy ? 'rgba(74,222,128,0.5)' : 'rgba(248,113,113,0.5)'}`,
+                }} />
                 <Typography
                   variant="body2"
                   sx={{
-                    fontWeight: 600,
-                    color: isHealthy
-                      ? (darkMode ? '#86efac' : '#16a34a')
-                      : (darkMode ? '#fca5a5' : '#dc2626'),
+                    fontWeight: 600, fontSize: '0.82rem',
+                    color: isHealthy ? 'var(--success)' : 'var(--danger)',
                   }}
                 >
                   {isHealthy ? '运行正常' : error || '连接异常'}
@@ -96,7 +97,7 @@ export default function HealthCard({ darkMode }) {
               </>
             )}
             {loading && (
-              <Typography variant="body2" sx={{ color: darkMode ? '#94a3b8' : '#94a3b8' }}>
+              <Typography variant="body2" sx={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>
                 检测中...
               </Typography>
             )}

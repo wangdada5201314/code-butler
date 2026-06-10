@@ -1,14 +1,14 @@
 import React from 'react';
-import { AppBar, Toolbar, Typography, Box, IconButton, Tooltip, Button, Avatar } from '@mui/material';
+import { AppBar, Toolbar, Typography, Box, IconButton, Tooltip, Avatar, Chip } from '@mui/material';
 import CodeIcon from '@mui/icons-material/Code';
 import DarkModeIcon from '@mui/icons-material/DarkMode';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import GitHubIcon from '@mui/icons-material/GitHub';
-import LoginIcon from '@mui/icons-material/Login';
 import LogoutIcon from '@mui/icons-material/Logout';
+import HistoryIcon from '@mui/icons-material/History';
 import { useLoginUser } from '../stores/useLoginUser.jsx';
 
-export default function Header({ darkMode, onToggleTheme, onOpenLogin }) {
+export default function Header({ darkMode, onToggleTheme, onOpenLogin, onOpenHistory }) {
   const { loginUser, logout } = useLoginUser();
 
   return (
@@ -16,112 +16,138 @@ export default function Header({ darkMode, onToggleTheme, onOpenLogin }) {
       position="sticky"
       elevation={0}
       sx={{
-        background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4338ca 100%)',
-        backdropFilter: 'blur(12px)',
-        borderBottom: '1px solid rgba(255,255,255,0.1)',
+        background: darkMode
+          ? 'rgba(8,7,9,0.85)'
+          : 'rgba(246,244,241,0.85)',
+        backdropFilter: 'blur(16px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(16px) saturate(180%)',
+        borderBottom: '1px solid var(--border-subtle)',
       }}
     >
-      <Toolbar sx={{ minHeight: '68px', display: 'flex', justifyContent: 'space-between' }}>
+      <Toolbar sx={{ minHeight: '56px', display: 'flex', justifyContent: 'space-between', px: { xs: 2, sm: 3 } }}>
         {/* Left: Logo & Title */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2 }}>
           <Box
             sx={{
-              width: 40, height: 40, borderRadius: 1.5,
-              background: 'linear-gradient(135deg, #6366f1, #06b6d4)',
+              width: 34, height: 34, borderRadius: 1.5,
+              background: 'linear-gradient(135deg, var(--accent), var(--accent-secondary))',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 0 16px rgba(99,102,241,0.5)',
+              boxShadow: `0 0 16px var(--accent-glow)`,
+              transition: 'transform 0.3s ease',
+              '&:hover': { transform: 'rotate(-8deg) scale(1.05)' },
             }}
           >
-            <CodeIcon sx={{ color: '#fff', fontSize: 22 }} />
+            <CodeIcon sx={{ color: '#0c0b0e', fontSize: 18 }} />
           </Box>
           <Box>
             <Typography
               sx={{
-                fontSize: '1.1rem', fontWeight: 800, letterSpacing: '-0.02em',
-                background: 'linear-gradient(135deg, #e0e7ff, #fff)',
-                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+                fontFamily: 'var(--font-display)',
+                fontSize: '1rem', fontWeight: 800, letterSpacing: '-0.02em',
+                color: 'var(--text-primary)',
+                lineHeight: 1.2,
               }}
             >
               Code Butler
             </Typography>
-            <Typography sx={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.6)', mt: -0.3 }}>
-              代码仓库智能管家 · powered by AgentScope
-            </Typography>
           </Box>
+          <Chip
+            label="v2.0"
+            size="small"
+            sx={{
+              height: 20, fontSize: '0.6rem', fontWeight: 700,
+              bgcolor: 'rgba(212,160,83,0.1)',
+              color: 'var(--accent)',
+              border: '1px solid rgba(212,160,83,0.2)',
+            }}
+          />
         </Box>
 
         {/* Right: Actions */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          {/* User / Login */}
-          {loginUser ? (
-            <>
-              <Avatar
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+          {loginUser && (
+            <Tooltip title="操作历史" arrow>
+              <IconButton
+                size="small"
+                onClick={onOpenHistory}
                 sx={{
-                  width: 32, height: 32, fontSize: '0.85rem',
-                  bgcolor: 'rgba(99,102,241,0.6)',
+                  color: 'var(--text-muted)',
+                  transition: 'all 0.2s',
+                  '&:hover': { color: 'var(--accent)', bgcolor: 'rgba(212,160,83,0.08)' },
                 }}
               >
-                {loginUser.userName?.charAt(0) || loginUser.userAccount?.charAt(0) || 'U'}
+                <HistoryIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+
+          {loginUser && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: 0.5 }}>
+              <Avatar
+                sx={{
+                  width: 28, height: 28, fontSize: '0.75rem',
+                  background: 'linear-gradient(135deg, var(--accent), var(--accent-secondary))',
+                  color: '#0c0b0e', fontWeight: 700,
+                }}
+              >
+                {(loginUser.userName || loginUser.userAccount || 'U').charAt(0).toUpperCase()}
               </Avatar>
               <Typography
                 sx={{
-                  fontSize: '0.8rem',
-                  color: 'rgba(255,255,255,0.85)',
-                  mr: 1,
-                  maxWidth: 120,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
+                  fontSize: '0.78rem', fontWeight: 600,
+                  color: 'var(--text-primary)',
+                  maxWidth: 100,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 }}
               >
                 {loginUser.userName || loginUser.userAccount}
               </Typography>
-              <Tooltip title="退出登录">
-                <IconButton
-                  size="small"
-                  onClick={logout}
-                  sx={{ color: 'rgba(255,255,255,0.6)', '&:hover': { color: '#fff' } }}
-                >
-                  <LogoutIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            </>
-          ) : (
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={<LoginIcon fontSize="small" />}
-              onClick={onOpenLogin}
-              sx={{
-                color: 'rgba(255,255,255,0.85)',
-                borderColor: 'rgba(255,255,255,0.3)',
-                fontSize: '0.75rem',
-                textTransform: 'none',
-                '&:hover': { borderColor: 'rgba(255,255,255,0.6)', bgcolor: 'rgba(255,255,255,0.08)' },
-              }}
-            >
-              登录
-            </Button>
+            </Box>
           )}
 
-          <Tooltip title="GitHub">
+          <Box sx={{ width: 1, height: 20, bgcolor: 'var(--border-subtle)', mx: 0.5 }} />
+
+          <Tooltip title="GitHub" arrow>
             <IconButton
               size="small"
               onClick={() => window.open('https://github.com', '_blank')}
-              sx={{ color: 'rgba(255,255,255,0.6)', '&:hover': { color: '#fff' } }}
+              sx={{
+                color: 'var(--text-muted)',
+                '&:hover': { color: 'var(--text-primary)' },
+              }}
             >
-              <GitHubIcon fontSize="small" />
+              <GitHubIcon sx={{ fontSize: 18 }} />
             </IconButton>
           </Tooltip>
-          <Tooltip title={darkMode ? '切换亮色模式' : '切换暗色模式'}>
+
+          <Tooltip title={darkMode ? '亮色模式' : '暗色模式'} arrow>
             <IconButton
               size="small"
               onClick={onToggleTheme}
-              sx={{ color: 'rgba(255,255,255,0.6)', '&:hover': { color: '#fff' } }}
+              sx={{
+                color: 'var(--text-muted)',
+                transition: 'all 0.3s',
+                '&:hover': { color: 'var(--accent)', transform: 'rotate(20deg)' },
+              }}
             >
               {darkMode ? <LightModeIcon fontSize="small" /> : <DarkModeIcon fontSize="small" />}
             </IconButton>
           </Tooltip>
+
+          {loginUser && (
+            <Tooltip title="退出登录" arrow>
+              <IconButton
+                size="small"
+                onClick={logout}
+                sx={{
+                  color: 'var(--text-muted)',
+                  '&:hover': { color: 'var(--danger)' },
+                }}
+              >
+                <LogoutIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
         </Box>
       </Toolbar>
     </AppBar>

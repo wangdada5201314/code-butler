@@ -1,5 +1,6 @@
 package com.agent.codebutler;
 
+import com.agent.codebutler.service.OperationRecordService;
 import com.agent.codebutler.service.UserService;
 import io.agentscope.harness.agent.HarnessAgent;
 import org.junit.jupiter.api.Test;
@@ -16,6 +17,9 @@ class CodeButlerApplicationTests {
 
     @MockBean
     private UserService userService;
+
+    @MockBean
+    private OperationRecordService operationRecordService;
 
     @Test
     void contextLoads() {

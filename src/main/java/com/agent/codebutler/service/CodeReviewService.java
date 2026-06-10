@@ -27,27 +27,34 @@ public class CodeReviewService {
     private final HarnessAgent agent;
     private final CodeScannerService codeScanner;
     private final GitService gitService;
+    private final OperationRecordService operationRecordService;
 
     @Value("${agentscope.call-timeout-seconds:120}")
     private int agentCallTimeoutSeconds;
 
     public CodeReviewService(HarnessAgent agent,
                              CodeScannerService codeScanner,
-                             GitService gitService) {
+                             GitService gitService,
+                             OperationRecordService operationRecordService) {
         this.agent = agent;
         this.codeScanner = codeScanner;
         this.gitService = gitService;
+        this.operationRecordService = operationRecordService;
     }
 
     /**
      * 对指定仓库执行代码审查
+     *
+     * @param repoPath 仓库路径
+     * @param userId   当前登录用户 ID（可为 null）
      */
-    public CodeReviewResult review(String repoPath) throws Exception {
+    public CodeReviewResult review(String repoPath, Long userId) throws Exception {
         GitService.validateRepoPath(repoPath);
 
         String sessionId = "review-" + UUID.randomUUID().toString().substring(0, 8);
-        log.info("开始代码审查: sessionId={}, repoPath={}", sessionId, repoPath);
+        log.info("开始代码审查: sessionId={}, repoPath={}, userId={}", sessionId, repoPath, userId);
 
+        long startTime = System.currentTimeMillis();
         String overview = codeScanner.getRepoOverview(repoPath);
         String gitStatus = gitService.getRepoStatus(repoPath);
         String gitChanges = gitService.getStagedDiff(repoPath);
@@ -71,16 +78,23 @@ public class CodeReviewService {
                 请用中文回复，结构清晰，每个问题标注严重程度（🔴严重 🟡建议 🟢优化）。
                 """, overview, gitStatus, gitChanges);
 
+        // 使用实际用户 ID 绑定 Agent 记忆，让 AI 逐步了解用户的审查偏好
+        String agentUserId = userId != null ? "review-" + userId : "code-reviewer";
         RuntimeContext ctx = RuntimeContext.builder()
                 .sessionId(sessionId)
-                .userId("code-reviewer")
+                .userId(agentUserId)
                 .build();
 
         String result = extractText(agent.call(new UserMessage(prompt), ctx)
                 .timeout(Duration.ofSeconds(agentCallTimeoutSeconds))
                 .block());
 
-        log.info("代码审查完成: sessionId={}", sessionId);
+        long durationMs = System.currentTimeMillis() - startTime;
+        log.info("代码审查完成: sessionId={}, duration={}ms", sessionId, durationMs);
+
+        // 异步记录操作历史
+        operationRecordService.recordAsync(userId, "REVIEW", repoPath,
+                null, result, durationMs, sessionId, "COMPLETED");
 
         return CodeReviewResult.builder()
                 .sessionId(sessionId)

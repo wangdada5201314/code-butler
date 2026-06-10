@@ -28,4 +28,9 @@ public interface UserService {
      * 用户登出
      */
     boolean userLogout(HttpServletRequest request);
+
+    /**
+     * 获取当前登录用户 ID，未登录返回 null（不抛异常）
+     */
+    Long getLoginUserIdOrNull(HttpServletRequest request);
 }

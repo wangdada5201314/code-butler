@@ -70,3 +70,13 @@ export function generateDocs(repoPath, docType) {
     method: 'POST',
   });
 }
+
+/**
+ * Fetch operation history for the logged-in user.
+ * @param {number} page - page number (starts from 1)
+ * @param {number} pageSize - items per page
+ * @returns {Promise<any>} paginated history records
+ */
+export function getHistory(page = 1, pageSize = 20) {
+  return request(`/code/history?page=${page}&pageSize=${pageSize}`);
+}
