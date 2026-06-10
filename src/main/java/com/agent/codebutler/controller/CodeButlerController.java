@@ -5,6 +5,7 @@ import com.agent.codebutler.dto.ApiResponse;
 import com.agent.codebutler.dto.CodeChatRequest;
 import com.agent.codebutler.dto.CodeReviewResult;
 import com.agent.codebutler.dto.DocGenerateResult;
+import com.agent.codebutler.dto.GeneralChatRequest;
 import com.agent.codebutler.model.entity.OperationRecord;
 import com.agent.codebutler.model.vo.OperationRecordVO;
 import com.agent.codebutler.service.*;
@@ -36,17 +37,20 @@ public class CodeButlerController {
     private final CodeReviewService codeReviewService;
     private final DocGenerationService docGenerationService;
     private final ChatService chatService;
+    private final GeneralChatService generalChatService;
     private final UserService userService;
     private final OperationRecordService operationRecordService;
 
     public CodeButlerController(CodeReviewService codeReviewService,
                                 DocGenerationService docGenerationService,
                                 ChatService chatService,
+                                GeneralChatService generalChatService,
                                 UserService userService,
                                 OperationRecordService operationRecordService) {
         this.codeReviewService = codeReviewService;
         this.docGenerationService = docGenerationService;
         this.chatService = chatService;
+        this.generalChatService = generalChatService;
         this.userService = userService;
         this.operationRecordService = operationRecordService;
     }
@@ -100,6 +104,15 @@ public class CodeButlerController {
             log.error("文档生成失败: repoPath={}, docType={}", repoPath, docType, e);
             return ApiResponse.error(500, "文档生成失败: " + e.getMessage());
         }
+    }
+
+    @PostMapping(value = "/chat/general/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @AuthCheck(mustRole = "user")
+    @Operation(summary = "通用聊天", description = "不依赖代码仓库的自由 AI 对话，基于 SSE 流式返回")
+    public Flux<ServerSentEvent<String>> generalChatStream(@Valid @RequestBody GeneralChatRequest request,
+                                                            HttpServletRequest httpRequest) {
+        Long userId = userService.getLoginUserIdOrNull(httpRequest);
+        return generalChatService.streamChat(request, userId);
     }
 
     @GetMapping("/history")

@@ -1,13 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import { Container, Box, Grid, Typography } from '@mui/material';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Box, Typography } from '@mui/material';
+import BugReportIcon from '@mui/icons-material/BugReport';
+import PsychologyIcon from '@mui/icons-material/Psychology';
+import DescriptionIcon from '@mui/icons-material/Description';
+import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import { LoginUserProvider, useLoginUser } from './stores/useLoginUser.jsx';
-import Header from './components/Header.jsx';
-import HealthCard from './components/HealthCard.jsx';
+import Sidebar from './components/Sidebar.jsx';
 import ReviewPanel from './components/ReviewPanel.jsx';
 import ChatPanel from './components/ChatPanel.jsx';
 import DocsPanel from './components/DocsPanel.jsx';
+import GeneralChatPanel from './components/GeneralChatPanel.jsx';
 import HistoryPanel from './components/HistoryPanel.jsx';
+import PreferencePanel from './components/PreferencePanel.jsx';
 import LoginModal from './components/LoginModal.jsx';
+import { checkHealth } from './api/client.js';
 
 /* ─── Feature highlights for the landing page ─── */
 const FEATURES = [
@@ -26,7 +32,20 @@ const FEATURES = [
     title: '文档生成',
     desc: '一键生成 README / API / CONTRIBUTING 文档',
   },
+  {
+    icon: '💭',
+    title: '通用聊天',
+    desc: '不依赖代码仓库，自由提问任何技术问题',
+  },
 ];
+
+/* Tab configuration */
+const TAB_CONFIG = {
+  review: { title: '代码审查', subtitle: 'AI 逐行扫描，发现潜在 Bug 与安全漏洞', icon: BugReportIcon, color: 'var(--accent)', bg: 'rgba(212,160,83,0.12)' },
+  chat:   { title: '智能问答', subtitle: '实时流式对话，分析项目结构与代码逻辑', icon: PsychologyIcon, color: 'var(--accent-secondary)', bg: 'rgba(45,212,191,0.12)' },
+  docs:    { title: '文档生成', subtitle: '一键生成项目文档，支持多种类型', icon: DescriptionIcon, color: '#a78bfa', bg: 'rgba(167,139,250,0.12)' },
+  general: { title: '通用聊天', subtitle: '不依赖代码仓库，自由 AI 对话', icon: ChatBubbleOutlineIcon, color: '#f472b6', bg: 'rgba(244,114,182,0.12)' },
+};
 
 /* ─── Inline LoginForm (split-screen version) ─── */
 function InlineLoginForm() {
@@ -225,7 +244,7 @@ function LoginView({ darkMode }) {
           <Typography sx={{ fontSize: '1rem', color: 'var(--text-secondary)', lineHeight: 1.8, maxWidth: 420, mb: 5 }}>
             基于 AgentScope 2.0 构建的智能代码助手。
             <br />
-            审查代码、解答疑问、生成文档 — 一站式 AI 开发体验。
+            审查代码、解答疑问、生成文档、自由聊天 — 一站式 AI 开发体验。
           </Typography>
 
           {/* Feature list */}
@@ -234,7 +253,7 @@ function LoginView({ darkMode }) {
               <Box
                 key={f.title}
                 className="animate-in"
-                style={{ animationDelay: `${0.2 + i * 0.15}s` }}
+                style={{ animationDelay: `${0.2 - i * 0.15}s` }}
                 sx={{
                   display: 'flex', alignItems: 'center', gap: 2,
                   p: '14px 18px', borderRadius: 'var(--radius-card)',
@@ -329,6 +348,9 @@ function AppInner() {
   });
   const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [preferenceOpen, setPreferenceOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('review');
+  const [healthStatus, setHealthStatus] = useState('loading');
   const { loginUser, loading } = useLoginUser();
 
   useEffect(() => {
@@ -342,6 +364,22 @@ function AppInner() {
     window.addEventListener('auth:required', handler);
     return () => window.removeEventListener('auth:required', handler);
   }, []);
+
+  // Health check polling
+  const fetchHealth = useCallback(async () => {
+    try {
+      await checkHealth();
+      setHealthStatus('healthy');
+    } catch {
+      setHealthStatus('error');
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchHealth();
+    const interval = setInterval(fetchHealth, 30000);
+    return () => clearInterval(interval);
+  }, [fetchHealth]);
 
   // Loading state
   if (loading) {
@@ -375,86 +413,168 @@ function AppInner() {
     return <LoginView darkMode={darkMode} />;
   }
 
-  // Logged in → full app
+  // Logged in → sidebar + content layout
+  const config = TAB_CONFIG[activeTab];
+  const TabIcon = config.icon;
+
   return (
-    <Box sx={{ minHeight: '100vh', pb: 6, position: 'relative' }}>
-      <Header
+    <Box sx={{ minHeight: '100vh' }}>
+      {/* ── Sidebar Navigation ── */}
+      <Sidebar
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
         darkMode={darkMode}
         onToggleTheme={() => setDarkMode((p) => !p)}
-        onOpenLogin={() => setLoginModalOpen(true)}
         onOpenHistory={() => setHistoryOpen(true)}
+        onOpenPreference={() => setPreferenceOpen(true)}
+        healthStatus={healthStatus}
       />
 
+      {/* ── Overlay Panels ── */}
+      <HistoryPanel
+        darkMode={darkMode}
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+      />
+      <PreferencePanel
+        open={preferenceOpen}
+        onClose={() => setPreferenceOpen(false)}
+      />
       <LoginModal
         open={loginModalOpen}
         onClose={() => setLoginModalOpen(false)}
         darkMode={darkMode}
       />
 
-      <HistoryPanel
-        darkMode={darkMode}
-        open={historyOpen}
-        onClose={() => setHistoryOpen(false)}
-      />
-
-      {/* Hero Section */}
-      <Box sx={{ position: 'relative', pt: 6, pb: 4, textAlign: 'center', overflow: 'hidden' }}>
-        {/* Background orb */}
-        <Box className="mesh-orb mesh-orb-amber" sx={{ width: 400, height: 400, top: '-30%', left: '50%', transform: 'translateX(-50%)', animation: 'orbFloat1 14s ease-in-out infinite' }} />
-
-        <Box className="animate-in" style={{ animationDelay: '0.05s' }}>
-          <Typography
-            sx={{
-              fontFamily: 'var(--font-display)',
-              fontSize: { xs: '1.5rem', sm: '2rem' },
-              fontWeight: 800,
-              letterSpacing: '-0.03em',
-              color: 'var(--text-primary)',
-            }}
-          >
-            让 AI 审查你的
-            <Box
-              component="span"
-              sx={{
-                background: 'linear-gradient(135deg, var(--accent), var(--accent-secondary))',
-                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-              }}
-            >
-              {' '}每一行代码
-            </Box>
-          </Typography>
-        </Box>
-
-        <Typography
-          className="animate-in"
-          style={{ animationDelay: '0.15s' }}
+      {/* ── Main Content Area ── */}
+      <Box
+        className="main-content"
+        sx={{
+          ml: { xs: 0, sm: '72px', md: '240px' },
+          minHeight: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          pb: { xs: '64px', sm: 0 },
+          transition: 'margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        }}
+      >
+        {/* ── Content Header ── */}
+        <Box
           sx={{
-            mt: 1.5, maxWidth: 480, mx: 'auto',
-            fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: 1.7,
+            position: 'sticky',
+            top: 0,
+            zIndex: 100,
+            px: { xs: 2.5, sm: 3, lg: 4 },
+            py: '14px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: darkMode
+              ? 'rgba(8,7,9,0.82)'
+              : 'rgba(246,244,241,0.82)',
+            backdropFilter: 'blur(16px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(16px) saturate(180%)',
+            borderBottom: '1px solid var(--border-subtle)',
           }}
         >
-          AgentScope 2.0 · 代码审查 / 智能问答 / 文档生成
-        </Typography>
-      </Box>
-
-      {/* Feature Panels */}
-      <Container maxWidth="xl">
-        <Box sx={{ mb: 2.5 }} className="animate-in" style={{ animationDelay: '0.2s' }}>
-          <HealthCard darkMode={darkMode} />
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Box sx={{
+              width: 32, height: 32, borderRadius: 1.5,
+              bgcolor: config.bg,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <TabIcon sx={{ fontSize: 18, color: config.color }} />
+            </Box>
+            <Box>
+              <Typography
+                sx={{
+                  fontFamily: 'var(--font-display)',
+                  fontSize: '1.05rem', fontWeight: 700,
+                  color: 'var(--text-primary)',
+                  lineHeight: 1.2,
+                }}
+              >
+                {config.title}
+              </Typography>
+              <Typography sx={{ fontSize: '0.72rem', color: 'var(--text-muted)', mt: 0.2 }}>
+                {config.subtitle}
+              </Typography>
+            </Box>
+          </Box>
         </Box>
 
-        <Grid container spacing={2.5}>
-          <Grid item xs={12} lg={6} className="animate-in" sx={{ animationDelay: '0.25s' }}>
-            <ReviewPanel darkMode={darkMode} />
-          </Grid>
-          <Grid item xs={12} lg={6} className="animate-in" sx={{ animationDelay: '0.3s' }}>
-            <ChatPanel darkMode={darkMode} />
-          </Grid>
-          <Grid item xs={12} className="animate-in" sx={{ animationDelay: '0.35s' }}>
-            <DocsPanel darkMode={darkMode} />
-          </Grid>
-        </Grid>
-      </Container>
+        {/* ── Tab Content ── */}
+        <Box
+          key={activeTab}
+          className="animate-in"
+          sx={{
+            flex: 1,
+            p: { xs: 2, sm: 2.5, lg: 3 },
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: 0,
+          }}
+        >
+          {activeTab === 'review' && <ReviewPanel darkMode={darkMode} />}
+          {activeTab === 'chat' && <ChatPanel darkMode={darkMode} />}
+          {activeTab === 'docs' && <DocsPanel darkMode={darkMode} />}
+          {activeTab === 'general' && <GeneralChatPanel darkMode={darkMode} />}
+        </Box>
+      </Box>
+
+      {/* ── Mobile Bottom Navigation (xs only) ── */}
+      <Box
+        sx={{
+          display: { xs: 'flex', sm: 'none' },
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          zIndex: 1100,
+          alignItems: 'center',
+          justifyContent: 'space-around',
+          py: '6px',
+          pb: 'env(safe-area-inset-bottom, 6px)',
+          background: darkMode
+            ? 'rgba(10,9,12,0.95)'
+            : 'rgba(248,246,243,0.95)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          borderTop: '1px solid var(--border-subtle)',
+        }}
+      >
+        {Object.entries(TAB_CONFIG).map(([key, cfg]) => {
+          const Icon = cfg.icon;
+          const isActive = activeTab === key;
+          return (
+            <Box
+              key={key}
+              onClick={() => setActiveTab(key)}
+              sx={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+                gap: '2px', px: 2, py: '4px',
+                cursor: 'pointer',
+                borderRadius: 1,
+                transition: 'all 0.2s',
+                '&:active': { transform: 'scale(0.92)' },
+              }}
+            >
+              <Icon sx={{
+                fontSize: 22,
+                color: isActive ? cfg.color : 'var(--text-muted)',
+                transition: 'color 0.2s',
+              }} />
+              <Typography sx={{
+                fontSize: '0.6rem', fontWeight: isActive ? 700 : 500,
+                color: isActive ? cfg.color : 'var(--text-muted)',
+                transition: 'color 0.2s',
+              }}>
+                {cfg.title}
+              </Typography>
+            </Box>
+          );
+        })}
+      </Box>
     </Box>
   );
 }

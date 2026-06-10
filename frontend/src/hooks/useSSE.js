@@ -14,7 +14,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
  *   isConnected: boolean,
  *   isLoading: boolean,
  *   error: string | null,
- *   startStream: (question: string, repoPath: string) => void,
+ *   startStream: (question: string, repoPath: string, endpoint?: string) => void,
  *   stopStream: () => void
  * }}
  */
@@ -61,7 +61,7 @@ export function useSSE() {
     setMessages((prev) => prev + data);
   }, []);
 
-  const startStream = useCallback((question, repoPath) => {
+  const startStream = useCallback((question, repoPath, endpoint) => {
     // Reset state
     setMessages('');
     setError(null);
@@ -77,14 +77,20 @@ export function useSSE() {
     abortControllerRef.current = controller;
 
     const API_BASE = '/api';
+    const url = endpoint || `${API_BASE}/code/chat/stream`;
 
-    fetch(`${API_BASE}/code/chat/stream`, {
+    // Build body: for general chat (no repoPath), only send message
+    const body = repoPath
+      ? JSON.stringify({ question, repoPath })
+      : JSON.stringify({ message: question });
+
+    fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'text/event-stream',
       },
-      body: JSON.stringify({ question, repoPath }),
+      body: body,
       signal: controller.signal,
       credentials: 'include',
     })

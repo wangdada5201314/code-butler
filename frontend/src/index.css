@@ -387,3 +387,36 @@ body::before {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* ── Main Content Layout ── */
+.main-content {
+  position: relative;
+  z-index: 1;
+}
+
+/* Panels inside the content area should fill available space */
+.main-content .forge-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.main-content .forge-card .MuiCardContent-root {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── Sidebar responsive behavior ── */
+@media (max-width: 600px) {
+  /* On mobile, no sidebar, full width content */
+  .main-content {
+    margin-left: 0 !important;
+  }
+}
+
+/* ── Smooth tab transition ── */
+@keyframes tabFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}

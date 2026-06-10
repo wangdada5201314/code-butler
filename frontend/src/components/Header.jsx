@@ -6,9 +6,10 @@ import LightModeIcon from '@mui/icons-material/LightMode';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import LogoutIcon from '@mui/icons-material/Logout';
 import HistoryIcon from '@mui/icons-material/History';
+import SettingsIcon from '@mui/icons-material/Settings';
 import { useLoginUser } from '../stores/useLoginUser.jsx';
 
-export default function Header({ darkMode, onToggleTheme, onOpenLogin, onOpenHistory }) {
+export default function Header({ darkMode, onToggleTheme, onOpenLogin, onOpenHistory, onOpenPreference }) {
   const { loginUser, logout } = useLoginUser();
 
   return (
@@ -77,6 +78,22 @@ export default function Header({ darkMode, onToggleTheme, onOpenLogin, onOpenHis
                 }}
               >
                 <HistoryIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+
+          {loginUser && (
+            <Tooltip title="审查偏好" arrow>
+              <IconButton
+                size="small"
+                onClick={onOpenPreference}
+                sx={{
+                  color: 'var(--text-muted)',
+                  transition: 'all 0.2s',
+                  '&:hover': { color: 'var(--accent)', bgcolor: 'rgba(212,160,83,0.08)', transform: 'rotate(30deg)' },
+                }}
+              >
+                <SettingsIcon fontSize="small" />
               </IconButton>
             </Tooltip>
           )}

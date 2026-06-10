@@ -80,3 +80,63 @@ export function generateDocs(repoPath, docType) {
 export function getHistory(page = 1, pageSize = 20) {
   return request(`/code/history?page=${page}&pageSize=${pageSize}`);
 }
+
+/**
+ * Get current user's review preferences.
+ * @returns {Promise<any>} { reviewFocus, reviewDepth, customPrompt }
+ */
+export function getPreference() {
+  return request('/user/preference');
+}
+
+/**
+ * Update current user's review preferences.
+ * @param {{ reviewFocus: string, reviewDepth: string, customPrompt: string }} prefs
+ * @returns {Promise<any>}
+ */
+export function updatePreference(prefs) {
+  return request('/user/preference', {
+    method: 'PUT',
+    body: JSON.stringify(prefs),
+  });
+}
+
+/**
+ * Get available review focus options.
+ * @returns {Promise<Record<string,string>>}
+ */
+export function getFocusOptions() {
+  return request('/user/preference/focus-options');
+}
+
+/**
+ * Get current user's favorite repositories.
+ * @returns {Promise<any[]>}
+ */
+export function getFavoriteRepos() {
+  return request('/user/favorite-repos');
+}
+
+/**
+ * Add a repository to favorites.
+ * @param {string} repoPath
+ * @param {string} [repoName]
+ * @returns {Promise<any>}
+ */
+export function addFavoriteRepo(repoPath, repoName = '') {
+  return request('/user/favorite-repos', {
+    method: 'POST',
+    body: JSON.stringify({ repoPath, repoName }),
+  });
+}
+
+/**
+ * Remove a repository from favorites.
+ * @param {number} id - favorite repo record ID
+ * @returns {Promise<any>}
+ */
+export function removeFavoriteRepo(id) {
+  return request(`/user/favorite-repos/${id}`, {
+    method: 'DELETE',
+  });
+}

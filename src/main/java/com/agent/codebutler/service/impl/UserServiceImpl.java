@@ -13,6 +13,7 @@ import com.mybatisflex.core.query.QueryWrapper;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.util.DigestUtils;
@@ -28,7 +29,9 @@ import java.nio.charset.StandardCharsets;
 public class UserServiceImpl implements UserService {
 
     private static final Logger log = LoggerFactory.getLogger(UserServiceImpl.class);
-    private static final String SALT = "code-butler";
+
+    @Value("${app.security.password-salt}")
+    private String salt;
 
     private final UserMapper userMapper;
 
@@ -159,6 +162,6 @@ public class UserServiceImpl implements UserService {
      * MD5 + Salt 加密
      */
     private String getEncryptPassword(String userPassword) {
-        return DigestUtils.md5DigestAsHex((userPassword + SALT).getBytes(StandardCharsets.UTF_8));
+        return DigestUtils.md5DigestAsHex((userPassword + salt).getBytes(StandardCharsets.UTF_8));
     }
 }

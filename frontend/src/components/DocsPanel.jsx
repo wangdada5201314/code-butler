@@ -7,6 +7,7 @@ import DescriptionIcon from '@mui/icons-material/Description';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
 import { generateDocs } from '../api/client.js';
+import FavoriteReposBar from './FavoriteReposBar.jsx';
 
 export default function DocsPanel({ darkMode }) {
   const [repoPath, setRepoPath] = useState('');
@@ -21,7 +22,7 @@ export default function DocsPanel({ darkMode }) {
     setLoading(true); setError(null); setDocContent('');
     try {
       const data = await generateDocs(repoPath.trim(), docType);
-      const content = typeof data === 'string' ? data : data?.content || data?.doc || JSON.stringify(data, null, 2);
+      const content = typeof data === 'string' ? data : data?.document || data?.content || data?.doc || JSON.stringify(data, null, 2);
       setDocContent(content);
     } catch (err) {
       setError(err.message || '文档生成失败');
@@ -75,6 +76,9 @@ export default function DocsPanel({ darkMode }) {
             </Button>
           )}
         </Box>
+
+        {/* Favorite repos quick-select */}
+        <FavoriteReposBar onRepoSelect={(path) => setRepoPath(path)} />
 
         {/* Input row */}
         <Box sx={{ display: 'flex', gap: 1.5, mb: 2, flexWrap: 'wrap' }}>
@@ -155,7 +159,7 @@ export default function DocsPanel({ darkMode }) {
                 lineHeight: 1.7,
                 whiteSpace: 'pre-wrap',
                 overflow: 'auto',
-                maxHeight: 360,
+                maxHeight: 520,
                 color: 'var(--text-primary)',
               }}
               className="custom-scrollbar"

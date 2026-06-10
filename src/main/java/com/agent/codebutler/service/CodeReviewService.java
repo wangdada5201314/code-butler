@@ -28,6 +28,7 @@ public class CodeReviewService {
     private final CodeScannerService codeScanner;
     private final GitService gitService;
     private final OperationRecordService operationRecordService;
+    private final UserPreferenceService userPreferenceService;
 
     @Value("${agentscope.call-timeout-seconds:120}")
     private int agentCallTimeoutSeconds;
@@ -35,11 +36,13 @@ public class CodeReviewService {
     public CodeReviewService(HarnessAgent agent,
                              CodeScannerService codeScanner,
                              GitService gitService,
-                             OperationRecordService operationRecordService) {
+                             OperationRecordService operationRecordService,
+                             UserPreferenceService userPreferenceService) {
         this.agent = agent;
         this.codeScanner = codeScanner;
         this.gitService = gitService;
         this.operationRecordService = operationRecordService;
+        this.userPreferenceService = userPreferenceService;
     }
 
     /**
@@ -68,6 +71,8 @@ public class CodeReviewService {
 
                 %s
 
+                %s
+
                 请从以下几个方面给出审查意见：
                 1. 代码质量和规范性
                 2. 潜在的 Bug 和安全漏洞
@@ -76,7 +81,8 @@ public class CodeReviewService {
                 5. 文档完善度
 
                 请用中文回复，结构清晰，每个问题标注严重程度（🔴严重 🟡建议 🟢优化）。
-                """, overview, gitStatus, gitChanges);
+                """, overview, gitStatus, gitChanges,
+                userPreferenceService.buildPreferencePrompt(userId));
 
         // 使用实际用户 ID 绑定 Agent 记忆，让 AI 逐步了解用户的审查偏好
         String agentUserId = userId != null ? "review-" + userId : "code-reviewer";

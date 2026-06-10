@@ -1,7 +1,10 @@
 package com.agent.codebutler;
 
+import com.agent.codebutler.service.GeneralChatService;
 import com.agent.codebutler.service.OperationRecordService;
 import com.agent.codebutler.service.UserService;
+import com.agent.codebutler.service.UserPreferenceService;
+import com.agent.codebutler.service.FavoriteRepoService;
 import io.agentscope.harness.agent.HarnessAgent;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -20,6 +23,15 @@ class CodeButlerApplicationTests {
 
     @MockBean
     private OperationRecordService operationRecordService;
+
+    @MockBean
+    private UserPreferenceService userPreferenceService;
+
+    @MockBean
+    private FavoriteRepoService favoriteRepoService;
+
+    @MockBean
+    private GeneralChatService generalChatService;
 
     @Test
     void contextLoads() {

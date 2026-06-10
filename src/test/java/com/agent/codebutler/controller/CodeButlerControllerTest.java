@@ -3,6 +3,7 @@ package com.agent.codebutler.controller;
 import com.agent.codebutler.service.ChatService;
 import com.agent.codebutler.service.CodeReviewService;
 import com.agent.codebutler.service.DocGenerationService;
+import com.agent.codebutler.service.GeneralChatService;
 import com.agent.codebutler.service.OperationRecordService;
 import com.agent.codebutler.service.UserService;
 import com.agent.codebutler.aop.AuthInterceptor;
@@ -41,6 +42,9 @@ class CodeButlerControllerTest {
 
     @MockBean
     private ChatService chatService;
+
+    @MockBean
+    private GeneralChatService generalChatService;
 
     @MockBean
     private UserService userService;
@@ -100,5 +104,15 @@ class CodeButlerControllerTest {
                         .param("docType", "README"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0));
+    }
+
+    @Test
+    @DisplayName("通用聊天缺少 message 应返回 400")
+    void generalChatMissingMessageShouldReturn400() throws Exception {
+        mockMvc.perform(post("/api/code/chat/general/stream")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400));
     }
 }

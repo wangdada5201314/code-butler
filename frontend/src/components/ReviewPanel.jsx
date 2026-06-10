@@ -6,6 +6,7 @@ import {
 import SearchIcon from '@mui/icons-material/Search';
 import BugReportIcon from '@mui/icons-material/BugReport';
 import { reviewCode } from '../api/client.js';
+import FavoriteReposBar from './FavoriteReposBar.jsx';
 
 export default function ReviewPanel({ darkMode }) {
   const [repoPath, setRepoPath] = useState('');
@@ -40,6 +41,9 @@ export default function ReviewPanel({ darkMode }) {
           </Box>
           <Typography className="section-title">代码审查</Typography>
         </Box>
+
+        {/* Favorite repos quick-select */}
+        <FavoriteReposBar onRepoSelect={(path) => setRepoPath(path)} />
 
         {/* Input row */}
         <Box sx={{ display: 'flex', gap: 1.5, mb: 2 }}>
@@ -114,7 +118,7 @@ export default function ReviewPanel({ darkMode }) {
                 lineHeight: 1.8,
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
-                maxHeight: 500,
+                maxHeight: 600,
                 overflow: 'auto',
                 color: 'var(--text-primary)',
                 fontFamily: 'var(--font-code)',

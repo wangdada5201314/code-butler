@@ -12,6 +12,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import CheckIcon from '@mui/icons-material/Check';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import { useSSE } from '../hooks/useSSE.js';
+import FavoriteReposBar from './FavoriteReposBar.jsx';
 
 /* ─── Quick Prompts ─── */
 const QUICK_PROMPTS = [
@@ -276,6 +277,9 @@ export default function ChatPanel({ darkMode }) {
           )}
         </Box>
 
+        {/* Favorite repos quick-select */}
+        <FavoriteReposBar onRepoSelect={(path) => setRepoPath(path)} />
+
         {/* Input area */}
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 2 }}>
           <TextField
@@ -359,7 +363,7 @@ export default function ChatPanel({ darkMode }) {
         )}
 
         {/* Chat area */}
-        <Box sx={{ position: 'relative', flex: 1, minHeight: 350, overflow: 'hidden' }}>
+        <Box sx={{ position: 'relative', flex: 1, minHeight: 480, overflow: 'hidden' }}>
           <Paper
             ref={chatAreaRef}
             variant="outlined"
