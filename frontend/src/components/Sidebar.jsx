@@ -5,6 +5,7 @@ import BugReportIcon from '@mui/icons-material/BugReport';
 import PsychologyIcon from '@mui/icons-material/Psychology';
 import DescriptionIcon from '@mui/icons-material/Description';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
+import BarChartIcon from '@mui/icons-material/BarChart';
 import HistoryIcon from '@mui/icons-material/History';
 import SettingsIcon from '@mui/icons-material/Settings';
 import DarkModeIcon from '@mui/icons-material/DarkMode';
@@ -21,6 +22,7 @@ const NAV_ITEMS = [
   { key: 'chat',   label: '智能问答', icon: PsychologyIcon, color: 'var(--accent-secondary)', bg: 'rgba(45,212,191,0.12)' },
   { key: 'docs',    label: '文档生成', icon: DescriptionIcon, color: '#a78bfa', bg: 'rgba(167,139,250,0.12)' },
   { key: 'general', label: '通用聊天', icon: ChatBubbleOutlineIcon, color: '#f472b6', bg: 'rgba(244,114,182,0.12)' },
+  { key: 'usage',   label: '用量统计', icon: BarChartIcon, color: '#60a5fa', bg: 'rgba(96,165,250,0.12)' },
 ];
 
 export default function Sidebar({ activeTab, onTabChange, darkMode, onToggleTheme, onOpenHistory, onOpenPreference, healthStatus }) {

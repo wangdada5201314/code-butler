@@ -50,7 +50,8 @@ public class GeneralChatService {
         log.info("通用聊天: sessionId={}, userId={}", sessionId, userId);
 
         operationRecordService.recordAsync(userId, "CHAT", null,
-                message, null, 0, sessionId, "COMPLETED");
+                message, null, 0, sessionId, "COMPLETED",
+                UsageService.estimateTokens(message));
 
         String agentUserId = userId != null ? "general-" + userId : "general-chat";
 

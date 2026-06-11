@@ -100,7 +100,8 @@ public class CodeReviewService {
 
         // 异步记录操作历史
         operationRecordService.recordAsync(userId, "REVIEW", repoPath,
-                null, result, durationMs, sessionId, "COMPLETED");
+                null, result, durationMs, sessionId, "COMPLETED",
+                UsageService.estimateTokens(result));
 
         return CodeReviewResult.builder()
                 .sessionId(sessionId)

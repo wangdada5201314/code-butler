@@ -140,3 +140,11 @@ export function removeFavoriteRepo(id) {
     method: 'DELETE',
   });
 }
+
+/**
+ * Get current user's usage statistics (today/month calls, tokens, quota).
+ * @returns {Promise<any>} UsageStatsVO
+ */
+export function getUsageStats() {
+  return request('/code/usage');
+}

@@ -36,11 +36,12 @@ public class OperationRecordService {
      * @param durationMs 耗时（毫秒）
      * @param sessionId Agent 会话 ID
      * @param status    状态: COMPLETED / FAILED / TIMEOUT
+     * @param tokenCount 估算 token 消耗数
      */
     @Async
     public void recordAsync(Long userId, String opType, String repoPath,
                             String input, String output, long durationMs,
-                            String sessionId, String status) {
+                            String sessionId, String status, int tokenCount) {
         try {
             OperationRecord record = OperationRecord.builder()
                     .userId(userId != null ? userId : 0L)
@@ -51,6 +52,7 @@ public class OperationRecordService {
                     .status(status != null ? status : "COMPLETED")
                     .durationMs((int) Math.min(durationMs, Integer.MAX_VALUE))
                     .sessionId(sessionId)
+                    .tokenCount(tokenCount)
                     .build();
             operationRecordMapper.insert(record);
             log.debug("操作记录已保存: type={}, userId={}, sessionId={}", opType, userId, sessionId);

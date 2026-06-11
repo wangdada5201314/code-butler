@@ -4,12 +4,14 @@ import BugReportIcon from '@mui/icons-material/BugReport';
 import PsychologyIcon from '@mui/icons-material/Psychology';
 import DescriptionIcon from '@mui/icons-material/Description';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
+import BarChartIcon from '@mui/icons-material/BarChart';
 import { LoginUserProvider, useLoginUser } from './stores/useLoginUser.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import ReviewPanel from './components/ReviewPanel.jsx';
 import ChatPanel from './components/ChatPanel.jsx';
 import DocsPanel from './components/DocsPanel.jsx';
 import GeneralChatPanel from './components/GeneralChatPanel.jsx';
+import UsageDashboardPanel from './components/UsageDashboardPanel.jsx';
 import HistoryPanel from './components/HistoryPanel.jsx';
 import PreferencePanel from './components/PreferencePanel.jsx';
 import LoginModal from './components/LoginModal.jsx';
@@ -37,6 +39,11 @@ const FEATURES = [
     title: '通用聊天',
     desc: '不依赖代码仓库，自由提问任何技术问题',
   },
+  {
+    icon: '📊',
+    title: '用量统计',
+    desc: 'AI 调用次数、Token 消耗一目了然，按角色配额管理',
+  },
 ];
 
 /* Tab configuration */
@@ -45,6 +52,7 @@ const TAB_CONFIG = {
   chat:   { title: '智能问答', subtitle: '实时流式对话，分析项目结构与代码逻辑', icon: PsychologyIcon, color: 'var(--accent-secondary)', bg: 'rgba(45,212,191,0.12)' },
   docs:    { title: '文档生成', subtitle: '一键生成项目文档，支持多种类型', icon: DescriptionIcon, color: '#a78bfa', bg: 'rgba(167,139,250,0.12)' },
   general: { title: '通用聊天', subtitle: '不依赖代码仓库，自由 AI 对话', icon: ChatBubbleOutlineIcon, color: '#f472b6', bg: 'rgba(244,114,182,0.12)' },
+  usage:   { title: '用量统计', subtitle: 'AI 调用次数、Token 消耗与配额管理', icon: BarChartIcon, color: '#60a5fa', bg: 'rgba(96,165,250,0.12)' },
 };
 
 /* ─── Inline LoginForm (split-screen version) ─── */
@@ -519,6 +527,7 @@ function AppInner() {
           {activeTab === 'chat' && <ChatPanel darkMode={darkMode} />}
           {activeTab === 'docs' && <DocsPanel darkMode={darkMode} />}
           {activeTab === 'general' && <GeneralChatPanel darkMode={darkMode} />}
+          {activeTab === 'usage' && <UsageDashboardPanel darkMode={darkMode} />}
         </Box>
       </Box>
 

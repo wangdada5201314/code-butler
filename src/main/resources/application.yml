@@ -115,6 +115,15 @@ app:
     # ⚠️ 生产环境务必通过 APP_PASSWORD_SALT 环境变量设置独立盐值
     password-salt: ${APP_PASSWORD_SALT:code-butler}
 
+# ── 用量配额 ──
+quota:
+  review:
+    daily-limit: ${QUOTA_REVIEW_DAILY:20}
+  chat:
+    daily-limit: ${QUOTA_CHAT_DAILY:50}
+  doc:
+    daily-limit: ${QUOTA_DOC_DAILY:20}
+
 # ── Actuator ──
 management:
   endpoints:

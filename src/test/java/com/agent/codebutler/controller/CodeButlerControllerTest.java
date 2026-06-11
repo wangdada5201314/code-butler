@@ -5,8 +5,10 @@ import com.agent.codebutler.service.CodeReviewService;
 import com.agent.codebutler.service.DocGenerationService;
 import com.agent.codebutler.service.GeneralChatService;
 import com.agent.codebutler.service.OperationRecordService;
+import com.agent.codebutler.service.UsageService;
 import com.agent.codebutler.service.UserService;
 import com.agent.codebutler.aop.AuthInterceptor;
+import com.agent.codebutler.aop.QuotaInterceptor;
 import com.agent.codebutler.model.entity.User;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -20,6 +22,9 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -28,7 +33,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @WebMvcTest(CodeButlerController.class)
 @ActiveProfiles("test")
-@Import(AuthInterceptor.class)
+@Import({AuthInterceptor.class, QuotaInterceptor.class})
 class CodeButlerControllerTest {
 
     @Autowired
@@ -52,6 +57,9 @@ class CodeButlerControllerTest {
     @MockBean
     private OperationRecordService operationRecordService;
 
+    @MockBean
+    private UsageService usageService;
+
     @BeforeEach
     void setUp() {
         // 模拟已登录用户（所有端点都需要 @AuthCheck(mustRole = "user")）
@@ -60,6 +68,9 @@ class CodeButlerControllerTest {
         mockUser.setUserAccount("test");
         mockUser.setUserRole("user");
         when(userService.getLoginUser(any())).thenReturn(mockUser);
+
+        // 模拟配额检查始终通过
+        when(usageService.hasQuota(anyLong(), anyString(), anyBoolean())).thenReturn(true);
     }
 
     @Test

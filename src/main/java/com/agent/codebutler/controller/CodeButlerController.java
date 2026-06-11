@@ -1,13 +1,16 @@
 package com.agent.codebutler.controller;
 
 import com.agent.codebutler.annotation.AuthCheck;
+import com.agent.codebutler.annotation.QuotaCheck;
 import com.agent.codebutler.dto.ApiResponse;
 import com.agent.codebutler.dto.CodeChatRequest;
 import com.agent.codebutler.dto.CodeReviewResult;
 import com.agent.codebutler.dto.DocGenerateResult;
 import com.agent.codebutler.dto.GeneralChatRequest;
 import com.agent.codebutler.model.entity.OperationRecord;
+import com.agent.codebutler.model.enums.UserRoleEnum;
 import com.agent.codebutler.model.vo.OperationRecordVO;
+import com.agent.codebutler.model.vo.UsageStatsVO;
 import com.agent.codebutler.service.*;
 import com.mybatisflex.core.paginate.Page;
 import io.swagger.v3.oas.annotations.Operation;
@@ -40,23 +43,27 @@ public class CodeButlerController {
     private final GeneralChatService generalChatService;
     private final UserService userService;
     private final OperationRecordService operationRecordService;
+    private final UsageService usageService;
 
     public CodeButlerController(CodeReviewService codeReviewService,
                                 DocGenerationService docGenerationService,
                                 ChatService chatService,
                                 GeneralChatService generalChatService,
                                 UserService userService,
-                                OperationRecordService operationRecordService) {
+                                OperationRecordService operationRecordService,
+                                UsageService usageService) {
         this.codeReviewService = codeReviewService;
         this.docGenerationService = docGenerationService;
         this.chatService = chatService;
         this.generalChatService = generalChatService;
         this.userService = userService;
         this.operationRecordService = operationRecordService;
+        this.usageService = usageService;
     }
 
     @PostMapping("/review")
     @AuthCheck(mustRole = "user")
+    @QuotaCheck(opType = "REVIEW")
     @Operation(summary = "代码审查", description = "对指定仓库路径进行全面的代码审查")
     public ApiResponse<CodeReviewResult> review(
             @RequestParam @NotBlank(message = "仓库路径不能为空")
@@ -74,6 +81,7 @@ public class CodeButlerController {
 
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @AuthCheck(mustRole = "user")
+    @QuotaCheck(opType = "CHAT")
     @Operation(summary = "流式问答", description = "基于 SSE 的流式代码问答，实时返回 AI 分析结果")
     public Flux<ServerSentEvent<String>> chatStream(@Valid @RequestBody CodeChatRequest request,
                                                      HttpServletRequest httpRequest) {
@@ -83,6 +91,7 @@ public class CodeButlerController {
 
     @PostMapping("/docs")
     @AuthCheck(mustRole = "user")
+    @QuotaCheck(opType = "DOC")
     @Operation(summary = "生成文档", description = "为指定仓库生成文档（README / CHANGELOG / API 等）")
     public ApiResponse<DocGenerateResult> generateDocs(
             @RequestParam @NotBlank(message = "仓库路径不能为空")
@@ -108,6 +117,7 @@ public class CodeButlerController {
 
     @PostMapping(value = "/chat/general/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @AuthCheck(mustRole = "user")
+    @QuotaCheck(opType = "CHAT")
     @Operation(summary = "通用聊天", description = "不依赖代码仓库的自由 AI 对话，基于 SSE 流式返回")
     public Flux<ServerSentEvent<String>> generalChatStream(@Valid @RequestBody GeneralChatRequest request,
                                                             HttpServletRequest httpRequest) {
@@ -151,5 +161,23 @@ public class CodeButlerController {
         voPage.setTotalRow(recordPage.getTotalRow());
 
         return ApiResponse.success(voPage);
+    }
+
+    // ════════════════════════════════════════════════════════
+    //  用量统计
+    // ════════════════════════════════════════════════════════
+
+    @GetMapping("/usage")
+    @AuthCheck(mustRole = "user")
+    @Operation(summary = "用量统计", description = "获取当前用户的 AI 使用量统计（今日/本月调用次数、token 消耗、配额余量）")
+    public ApiResponse<UsageStatsVO> getUsageStats(HttpServletRequest request) {
+        Long userId = userService.getLoginUserIdOrNull(request);
+        if (userId == null) {
+            return ApiResponse.error(40100, "请先登录");
+        }
+        var loginUser = userService.getLoginUser(request);
+        boolean isAdmin = UserRoleEnum.ADMIN.getValue().equals(loginUser.getUserRole());
+        UsageStatsVO stats = usageService.getUsageStats(userId, isAdmin);
+        return ApiResponse.success(stats);
     }
 }

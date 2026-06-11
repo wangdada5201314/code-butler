@@ -46,6 +46,9 @@ public class OperationRecord implements Serializable {
     @Column("durationMs")
     private Integer durationMs;
 
+    @Column("tokenCount")
+    private Integer tokenCount;
+
     @Column("sessionId")
     private String sessionId;
 

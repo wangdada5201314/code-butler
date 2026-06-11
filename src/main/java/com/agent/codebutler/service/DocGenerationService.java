@@ -92,7 +92,8 @@ public class DocGenerationService {
 
         // 异步记录操作历史
         operationRecordService.recordAsync(userId, "DOC", repoPath,
-                docType, result, durationMs, sessionId, "COMPLETED");
+                docType, result, durationMs, sessionId, "COMPLETED",
+                UsageService.estimateTokens(result));
 
         return DocGenerateResult.builder()
                 .sessionId(sessionId)

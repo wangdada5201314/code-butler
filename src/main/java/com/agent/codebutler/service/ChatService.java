@@ -63,7 +63,8 @@ public class ChatService {
 
         // 记录操作历史（流式场景在开始时记录，状态标记为 COMPLETED）
         operationRecordService.recordAsync(userId, "CHAT", repoPath,
-                question, null, 0, sessionId, "COMPLETED");
+                question, null, 0, sessionId, "COMPLETED",
+                UsageService.estimateTokens(question));
 
         // 使用实际用户 ID 绑定 Agent 记忆，让 AI 逐步了解用户的提问风格和关注点
         String agentUserId = userId != null ? "chat-" + userId : "code-chat";

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.2.0-blue?style=flat-square" alt="v1.2.0" />
+  <img src="https://img.shields.io/badge/version-1.3.0-blue?style=flat-square" alt="v1.3.0" />
   <img src="https://img.shields.io/badge/Java-21-orange?style=flat-square&logo=openjdk" alt="Java 21" />
   <img src="https://img.shields.io/badge/Spring%20Boot-3.3.5-6DB33F?style=flat-square&logo=springboot" alt="Spring Boot 3.3" />
   <img src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React 18" />
@@ -12,7 +12,7 @@
 
 <p align="center">
   <strong>基于 AgentScope 2.0 + Spring Boot 3.3 构建的 AI 代码助手</strong><br/>
-  代码审查 &middot; 智能问答 &middot; 文档生成 &middot; 通用聊天 &mdash; 一站式 AI 开发体验
+  代码审查 &middot; 智能问答 &middot; 文档生成 &middot; 通用聊天 &middot; 用量统计 &mdash; 一站式 AI 开发体验
 </p>
 
 ---
@@ -48,6 +48,7 @@
 - **审查偏好配置** &mdash; 自定义关注点（安全/性能/架构/命名/可读性）、审查深度和指令，自动融入 AI prompt
 - **收藏仓库** &mdash; 收藏常用仓库路径，各功能面板一键选择，免去重复输入
 - **操作历史** &mdash; 所有 AI 操作自动记录，支持分页浏览和详情回溯
+- **用量统计与配额** &mdash; 今日/本月调用次数、Token 消耗可视化仪表盘，按角色配额管理（普通用户每日限额，管理员不限）
 - **暗色/亮色主题** &mdash; 一键切换，响应式布局适配移动端
 
 ## 架构总览
@@ -192,6 +193,7 @@ cd frontend && npm install && npm run dev
 | `POST` | `/api/code/review` | 代码审查（阻塞式） |
 | `POST` | `/api/code/chat/stream` | 流式问答（SSE） |
 | `POST` | `/api/code/chat/general/stream` | 通用聊天（SSE，无需仓库） |
+| `GET` | `/api/code/usage` | 用量统计（今日/本月调用、Token、配额） |
 | `POST` | `/api/code/docs` | 生成文档 |
 | `GET` | `/api/code/history` | 操作历史（分页） |
 
@@ -297,6 +299,7 @@ code-butler/
 │   │   ├── ChatService                  #   智能问答
 │   │   ├── GeneralChatService           #   通用聊天
 │   │   ├── DocGenerationService         #   文档生成
+│   │   ├── UsageService                 #   用量统计与配额
 │   │   ├── UserPreferenceService        #   用户偏好
 │   │   └── ...
 │   ├── model/                           # 实体 / VO / 枚举
@@ -314,6 +317,7 @@ code-butler/
         │   ├── ReviewPanel.jsx          #   代码审查面板
         │   ├── ChatPanel.jsx            #   智能问答面板
         │   ├── GeneralChatPanel.jsx     #   通用聊天面板
+        │   ├── UsageDashboardPanel.jsx  #   用量统计仪表盘
         │   ├── DocsPanel.jsx            #   文档生成面板
         │   └── ...
         ├── hooks/useSSE.js              # SSE 流式处理 Hook
@@ -369,6 +373,7 @@ code-butler/
 - [x] **用户偏好配置** &mdash; 自定义审查关注点、深度和指令，AI 自动融入 prompt
 - [x] **收藏仓库 + 快捷操作** &mdash; 收藏常用仓库，各面板一键选择
 - [x] **通用 AI 聊天** &mdash; 不依赖仓库的自由对话
+- [x] **用量统计与配额** &mdash; 调用次数、Token 消耗仪表盘，按角色配额管理
 - [ ] 结构化审查结果（JSON issue 列表，按严重度/文件/行号展示）
 - [ ] 用量统计与配额（token 消耗、操作次数、按角色限流）
 - [ ] MCP 工具协议对接（Git API、GitHub/GitLab）

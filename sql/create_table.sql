@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS operation_record (
     outputSummary TEXT COMMENT 'AI 输出摘要（前 500 字）',
     status        VARCHAR(16) DEFAULT 'COMPLETED' COMMENT '状态: COMPLETED / FAILED / TIMEOUT',
     durationMs    INT DEFAULT 0 COMMENT '耗时（毫秒）',
+    tokenCount    INT DEFAULT 0 COMMENT '估算 token 消耗数',
     sessionId     VARCHAR(64) COMMENT 'Agent 会话 ID',
     createTime    DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
     INDEX idx_userId_createTime (userId, createTime),
