@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box, Typography, LinearProgress, Tooltip, Fade, Alert, Chip, IconButton,
+  TextField, Button, Snackbar, CircularProgress,
 } from '@mui/material';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -10,7 +11,10 @@ import BugReportIcon from '@mui/icons-material/BugReport';
 import PsychologyIcon from '@mui/icons-material/Psychology';
 import DescriptionIcon from '@mui/icons-material/Description';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
-import { getUsageStats } from '../api/client.js';
+import SettingsIcon from '@mui/icons-material/Settings';
+import SaveIcon from '@mui/icons-material/Save';
+import EditIcon from '@mui/icons-material/Edit';
+import { getUsageStats, getQuotaConfigs, updateQuotaConfig } from '../api/client.js';
 
 /* ─── Helpers ─── */
 function formatNumber(n) {
@@ -103,6 +107,222 @@ function QuotaBar({ icon: Icon, label, used, limit, color }) {
           </Box>
         )}
       </Box>
+    </Box>
+  );
+}
+
+/* ─── Quota Config Panel (Admin Only) ─── */
+const OP_TYPE_LABELS = {
+  REVIEW: { label: '代码审查', icon: BugReportIcon, color: 'var(--accent)' },
+  CHAT: { label: 'AI 问答', icon: PsychologyIcon, color: 'var(--accent-secondary)' },
+  DOC: { label: '文档生成', icon: DescriptionIcon, color: '#a78bfa' },
+};
+
+function QuotaConfigPanel({ onConfigUpdated }) {
+  const [configs, setConfigs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState({});
+  const [saving, setSaving] = useState({});
+  const [toast, setToast] = useState(null);
+
+  const fetchConfigs = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await getQuotaConfigs();
+      setConfigs(data || []);
+    } catch (e) {
+      setToast({ severity: 'error', message: '获取配额配置失败' });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchConfigs(); }, [fetchConfigs]);
+
+  const handleEdit = (opType, currentLimit) => {
+    setEditing(prev => ({ ...prev, [opType]: String(currentLimit) }));
+  };
+
+  const handleSave = async (opType) => {
+    const value = parseInt(editing[opType], 10);
+    if (isNaN(value) || value < -1) {
+      setToast({ severity: 'error', message: '限额值无效，请输入 -1（不限）或正整数' });
+      return;
+    }
+    try {
+      setSaving(prev => ({ ...prev, [opType]: true }));
+      await updateQuotaConfig(opType, value);
+      setEditing(prev => { const n = { ...prev }; delete n[opType]; return n; });
+      setToast({ severity: 'success', message: `${OP_TYPE_LABELS[opType]?.label || opType} 配额已更新` });
+      await fetchConfigs();
+      if (onConfigUpdated) onConfigUpdated();
+    } catch (e) {
+      setToast({ severity: 'error', message: e.message || '保存失败' });
+    } finally {
+      setSaving(prev => ({ ...prev, [opType]: false }));
+    }
+  };
+
+  const handleCancel = (opType) => {
+    setEditing(prev => { const n = { ...prev }; delete n[opType]; return n; });
+  };
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 2 }}>
+        <CircularProgress size={16} />
+        <Typography sx={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>加载配置...</Typography>
+      </Box>
+    );
+  }
+
+  return (
+    <Box sx={{
+      p: '20px 24px',
+      borderRadius: 'var(--radius-card)',
+      background: 'var(--bg-surface)',
+      border: '1px solid var(--border-subtle)',
+    }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+        <SettingsIcon sx={{ fontSize: 18, color: 'var(--accent)' }} />
+        <Typography sx={{
+          fontFamily: 'var(--font-display)',
+          fontSize: '0.88rem', fontWeight: 700,
+          color: 'var(--text-primary)',
+        }}>
+          配额管理
+        </Typography>
+        <Chip
+          icon={<AdminPanelSettingsIcon sx={{ fontSize: 13 }} />}
+          label="管理员"
+          size="small"
+          sx={{
+            height: 22, fontSize: '0.62rem', fontWeight: 600,
+            bgcolor: 'rgba(212,160,83,0.1)',
+            color: 'var(--accent)',
+            border: '1px solid rgba(212,160,83,0.15)',
+            '& .MuiChip-icon': { color: 'var(--accent)' },
+          }}
+        />
+      </Box>
+
+      {configs.map((cfg) => {
+        const meta = OP_TYPE_LABELS[cfg.opType] || { label: cfg.opType, icon: SettingsIcon, color: '#999' };
+        const Icon = meta.icon;
+        const isEditing = editing[cfg.opType] !== undefined;
+        const isSaving = saving[cfg.opType];
+
+        return (
+          <Box key={cfg.opType} sx={{
+            display: 'flex', alignItems: 'center', gap: 2, py: '12px',
+            borderBottom: '1px solid var(--border-subtle)',
+            '&:last-child': { borderBottom: 'none' },
+          }}>
+            <Box sx={{
+              width: 30, height: 30, borderRadius: 1.5, flexShrink: 0,
+              bgcolor: `${meta.color}18`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Icon sx={{ fontSize: 16, color: meta.color }} />
+            </Box>
+
+            <Box sx={{ flex: 1 }}>
+              <Typography sx={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                {meta.label}
+              </Typography>
+              <Typography sx={{ fontSize: '0.66rem', color: 'var(--text-muted)' }}>
+                {cfg.description || ' '}
+              </Typography>
+            </Box>
+
+            {isEditing ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <TextField
+                  size="small"
+                  value={editing[cfg.opType]}
+                  onChange={(e) => setEditing(prev => ({ ...prev, [cfg.opType]: e.target.value }))}
+                  inputProps={{ style: { fontSize: '0.8rem', width: 70, textAlign: 'center' } }}
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      height: 32,
+                      '& fieldset': { borderColor: 'var(--border-subtle)' },
+                      '&:hover fieldset': { borderColor: 'var(--border-hover)' },
+                      '&.Mui-focused fieldset': { borderColor: '#60a5fa' },
+                    },
+                    '& .MuiOutlinedInput-input': { color: 'var(--text-primary)' },
+                  }}
+                />
+                <Typography sx={{ fontSize: '0.7rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                  次/日
+                </Typography>
+                <Button
+                  size="small"
+                  variant="contained"
+                  disabled={isSaving}
+                  onClick={() => handleSave(cfg.opType)}
+                  startIcon={isSaving ? <CircularProgress size={12} /> : <SaveIcon sx={{ fontSize: 14 }} />}
+                  sx={{
+                    minWidth: 0, px: 1.5, py: 0.5,
+                    fontSize: '0.7rem', textTransform: 'none',
+                    bgcolor: '#60a5fa', '&:hover': { bgcolor: '#3b82f6' },
+                  }}
+                >
+                  保存
+                </Button>
+                <Button
+                  size="small"
+                  onClick={() => handleCancel(cfg.opType)}
+                  disabled={isSaving}
+                  sx={{ minWidth: 0, px: 1, py: 0.5, fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'none' }}
+                >
+                  取消
+                </Button>
+              </Box>
+            ) : (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Typography sx={{
+                  fontFamily: 'var(--font-display)',
+                  fontSize: '1.1rem', fontWeight: 800,
+                  color: cfg.dailyLimit < 0 ? 'var(--text-muted)' : 'var(--text-primary)',
+                }}>
+                  {cfg.dailyLimit < 0 ? '不限' : cfg.dailyLimit}
+                </Typography>
+                <Typography sx={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                  {cfg.dailyLimit >= 0 ? '次/日' : ''}
+                </Typography>
+                <Tooltip title="编辑限额" arrow>
+                  <IconButton
+                    size="small"
+                    onClick={() => handleEdit(cfg.opType, cfg.dailyLimit)}
+                    sx={{ color: 'var(--text-muted)', '&:hover': { color: '#60a5fa' } }}
+                  >
+                    <EditIcon sx={{ fontSize: 15 }} />
+                  </IconButton>
+                </Tooltip>
+              </Box>
+            )}
+          </Box>
+        );
+      })}
+
+      <Box sx={{ mt: 1.5, pt: 1, borderTop: '1px solid var(--border-subtle)' }}>
+        <Typography sx={{ fontSize: '0.66rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+          修改后立即生效，无需重启。设为 -1 表示不限制。普通用户受此配额约束，管理员不受限。
+        </Typography>
+      </Box>
+
+      <Snackbar
+        open={!!toast}
+        autoHideDuration={3000}
+        onClose={() => setToast(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        {toast ? (
+          <Alert severity={toast.severity} onClose={() => setToast(null)} sx={{ borderRadius: 2 }}>
+            {toast.message}
+          </Alert>
+        ) : undefined}
+      </Snackbar>
     </Box>
   );
 }
@@ -391,6 +611,11 @@ export default function UsageDashboardPanel({ darkMode }) {
           </Typography>
         </Box>
       </Box>
+
+      {/* ── Admin Quota Config (only for admins) ── */}
+      {stats.isAdmin && (
+        <QuotaConfigPanel onConfigUpdated={fetchStats} />
+      )}
     </Box>
   );
 }

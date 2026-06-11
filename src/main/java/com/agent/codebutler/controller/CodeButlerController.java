@@ -7,7 +7,9 @@ import com.agent.codebutler.dto.CodeChatRequest;
 import com.agent.codebutler.dto.CodeReviewResult;
 import com.agent.codebutler.dto.DocGenerateResult;
 import com.agent.codebutler.dto.GeneralChatRequest;
+import com.agent.codebutler.dto.QuotaConfigUpdateRequest;
 import com.agent.codebutler.model.entity.OperationRecord;
+import com.agent.codebutler.model.entity.QuotaConfig;
 import com.agent.codebutler.model.enums.UserRoleEnum;
 import com.agent.codebutler.model.vo.OperationRecordVO;
 import com.agent.codebutler.model.vo.UsageStatsVO;
@@ -44,6 +46,7 @@ public class CodeButlerController {
     private final UserService userService;
     private final OperationRecordService operationRecordService;
     private final UsageService usageService;
+    private final QuotaConfigService quotaConfigService;
 
     public CodeButlerController(CodeReviewService codeReviewService,
                                 DocGenerationService docGenerationService,
@@ -51,7 +54,8 @@ public class CodeButlerController {
                                 GeneralChatService generalChatService,
                                 UserService userService,
                                 OperationRecordService operationRecordService,
-                                UsageService usageService) {
+                                UsageService usageService,
+                                QuotaConfigService quotaConfigService) {
         this.codeReviewService = codeReviewService;
         this.docGenerationService = docGenerationService;
         this.chatService = chatService;
@@ -59,6 +63,7 @@ public class CodeButlerController {
         this.userService = userService;
         this.operationRecordService = operationRecordService;
         this.usageService = usageService;
+        this.quotaConfigService = quotaConfigService;
     }
 
     @PostMapping("/review")
@@ -179,5 +184,24 @@ public class CodeButlerController {
         boolean isAdmin = UserRoleEnum.ADMIN.getValue().equals(loginUser.getUserRole());
         UsageStatsVO stats = usageService.getUsageStats(userId, isAdmin);
         return ApiResponse.success(stats);
+    }
+
+    // ════════════════════════════════════════════════════════
+    //  配额配置管理（仅管理员）
+    // ════════════════════════════════════════════════════════
+
+    @GetMapping("/quota/config")
+    @AuthCheck(mustRole = "admin")
+    @Operation(summary = "获取配额配置", description = "获取所有操作类型的每日限额配置（仅管理员）")
+    public ApiResponse<List<QuotaConfig>> getQuotaConfigs() {
+        return ApiResponse.success(quotaConfigService.getAllConfigs());
+    }
+
+    @PutMapping("/quota/config")
+    @AuthCheck(mustRole = "admin")
+    @Operation(summary = "更新配额配置", description = "更新指定操作类型的每日限额（仅管理员）")
+    public ApiResponse<Boolean> updateQuotaConfig(@Valid @RequestBody QuotaConfigUpdateRequest request) {
+        quotaConfigService.updateDailyLimit(request.getOpType(), request.getDailyLimit());
+        return ApiResponse.success(true);
     }
 }

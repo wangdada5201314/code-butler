@@ -148,3 +148,24 @@ export function removeFavoriteRepo(id) {
 export function getUsageStats() {
   return request('/code/usage');
 }
+
+/**
+ * Get quota configuration (admin only).
+ * @returns {Promise<any[]>} list of QuotaConfig
+ */
+export function getQuotaConfigs() {
+  return request('/code/quota/config');
+}
+
+/**
+ * Update quota configuration (admin only).
+ * @param {string} opType - REVIEW / CHAT / DOC
+ * @param {number} dailyLimit - daily limit, -1 for unlimited
+ * @returns {Promise<any>}
+ */
+export function updateQuotaConfig(opType, dailyLimit) {
+  return request('/code/quota/config', {
+    method: 'PUT',
+    body: JSON.stringify({ opType, dailyLimit }),
+  });
+}

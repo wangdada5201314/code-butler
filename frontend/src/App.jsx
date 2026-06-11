@@ -352,7 +352,7 @@ function LoginView({ darkMode }) {
 /* ─── Main App (logged in) ─── */
 function AppInner() {
   const [darkMode, setDarkMode] = useState(() => {
-    return localStorage.getItem('theme') !== 'light';
+    return localStorage.getItem('theme') === 'dark';
   });
   const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);

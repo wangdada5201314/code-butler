@@ -6,19 +6,17 @@ import com.agent.codebutler.model.vo.UsageStatsVO;
 import com.mybatisflex.core.query.QueryWrapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.List;
 
 /**
  * 用量统计与配额服务
  * <p>
  * 提供用量查询、配额校验和 token 估算功能。
- * 配额规则基于角色：admin 不限，普通用户按配置限额。
+ * 配额规则基于角色：admin 不限，普通用户按数据库配置限额。
  */
 @Service
 public class UsageService {
@@ -27,20 +25,12 @@ public class UsageService {
 
     private final OperationRecordMapper operationRecordMapper;
 
-    /** 每日审查次数上限（普通用户） */
-    @Value("${quota.review.daily-limit:20}")
-    private int reviewDailyLimit;
+    private final QuotaConfigService quotaConfigService;
 
-    /** 每日问答次数上限（普通用户，含智能问答 + 通用聊天） */
-    @Value("${quota.chat.daily-limit:50}")
-    private int chatDailyLimit;
-
-    /** 每日文档生成次数上限（普通用户） */
-    @Value("${quota.doc.daily-limit:20}")
-    private int docDailyLimit;
-
-    public UsageService(OperationRecordMapper operationRecordMapper) {
+    public UsageService(OperationRecordMapper operationRecordMapper,
+                        QuotaConfigService quotaConfigService) {
         this.operationRecordMapper = operationRecordMapper;
+        this.quotaConfigService = quotaConfigService;
     }
 
     // ════════════════════════════════════════════════════════
@@ -71,12 +61,7 @@ public class UsageService {
      * @return 限额值，-1 表示不限
      */
     public int getDailyLimit(String opType) {
-        return switch (opType) {
-            case "REVIEW" -> reviewDailyLimit;
-            case "CHAT" -> chatDailyLimit;
-            case "DOC" -> docDailyLimit;
-            default -> -1;
-        };
+        return quotaConfigService.getDailyLimit(opType);
     }
 
     /**
@@ -115,6 +100,11 @@ public class UsageService {
         // 本月 token 消耗
         long monthTokens = sumTokens(userId, monthStart);
 
+        // 从数据库读取当前限额
+        int reviewLimit = getDailyLimit("REVIEW");
+        int chatLimit = getDailyLimit("CHAT");
+        int docLimit = getDailyLimit("DOC");
+
         return UsageStatsVO.builder()
                 .todayReviewCount(todayReview)
                 .todayChatCount(todayChat)
@@ -125,12 +115,12 @@ public class UsageService {
                 .monthDocCount(monthDoc)
                 .monthTotalCount(monthReview + monthChat + monthDoc)
                 .monthTokenCount(monthTokens)
-                .reviewDailyLimit(isAdmin ? -1 : reviewDailyLimit)
-                .chatDailyLimit(isAdmin ? -1 : chatDailyLimit)
-                .docDailyLimit(isAdmin ? -1 : docDailyLimit)
-                .reviewDailyRemaining(isAdmin ? -1 : Math.max(0, reviewDailyLimit - todayReview))
-                .chatDailyRemaining(isAdmin ? -1 : Math.max(0, chatDailyLimit - todayChat))
-                .docDailyRemaining(isAdmin ? -1 : Math.max(0, docDailyLimit - todayDoc))
+                .reviewDailyLimit(isAdmin ? -1 : reviewLimit)
+                .chatDailyLimit(isAdmin ? -1 : chatLimit)
+                .docDailyLimit(isAdmin ? -1 : docLimit)
+                .reviewDailyRemaining(isAdmin ? -1 : Math.max(0, reviewLimit - todayReview))
+                .chatDailyRemaining(isAdmin ? -1 : Math.max(0, chatLimit - todayChat))
+                .docDailyRemaining(isAdmin ? -1 : Math.max(0, docLimit - todayDoc))
                 .isAdmin(isAdmin)
                 .build();
     }

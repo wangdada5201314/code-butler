@@ -5,6 +5,7 @@ import com.agent.codebutler.service.CodeReviewService;
 import com.agent.codebutler.service.DocGenerationService;
 import com.agent.codebutler.service.GeneralChatService;
 import com.agent.codebutler.service.OperationRecordService;
+import com.agent.codebutler.service.QuotaConfigService;
 import com.agent.codebutler.service.UsageService;
 import com.agent.codebutler.service.UserService;
 import com.agent.codebutler.aop.AuthInterceptor;
@@ -59,6 +60,9 @@ class CodeButlerControllerTest {
 
     @MockBean
     private UsageService usageService;
+
+    @MockBean
+    private QuotaConfigService quotaConfigService;
 
     @BeforeEach
     void setUp() {

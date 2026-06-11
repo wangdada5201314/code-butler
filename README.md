@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.3.0-blue?style=flat-square" alt="v1.3.0" />
+  <img src="https://img.shields.io/badge/version-2.0.0-blue?style=flat-square" alt="v2.0.0" />
   <img src="https://img.shields.io/badge/Java-21-orange?style=flat-square&logo=openjdk" alt="Java 21" />
   <img src="https://img.shields.io/badge/Spring%20Boot-3.3.5-6DB33F?style=flat-square&logo=springboot" alt="Spring Boot 3.3" />
   <img src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React 18" />
@@ -58,7 +58,7 @@
 │                       Frontend (React 18)                      │
 │    Vite + MUI 5 + Tailwind CSS + SSE + Sidebar Navigation     │
 │    侧边栏导航 · 用户偏好配置 · 收藏仓库 · 操作历史            │
-│                      Port: 5173 (dev)                         │
+│                      Port: 5200 (dev)                         │
 ├───────────────────────────────────────────────────────────────┤
 │                    Backend (Spring Boot 3.3.5)                 │
 │     Controller → Service → AgentScope Harness Agent           │
@@ -155,7 +155,7 @@ cd frontend && npm install && npm run dev
 |------|------|
 | 后端 API | http://localhost:8080 |
 | Swagger UI | http://localhost:8080/swagger-ui/index.html |
-| 前端开发服务器 | http://localhost:5173 |
+| 前端开发服务器 | http://localhost:5200 |
 
 ### 5. 运行测试
 
@@ -340,6 +340,7 @@ code-butler/
 | `outputSummary` | TEXT | AI 输出摘要（截断 500 字） |
 | `status` | VARCHAR(16) | COMPLETED / FAILED / TIMEOUT |
 | `durationMs` | INT | 耗时（毫秒） |
+| `tokenCount` | INT | Token 消耗量（估算） |
 
 </details>
 
@@ -368,20 +369,6 @@ code-butler/
 
 </details>
 
-## 扩展方向
-
-- [x] **用户偏好配置** &mdash; 自定义审查关注点、深度和指令，AI 自动融入 prompt
-- [x] **收藏仓库 + 快捷操作** &mdash; 收藏常用仓库，各面板一键选择
-- [x] **通用 AI 聊天** &mdash; 不依赖仓库的自由对话
-- [x] **用量统计与配额** &mdash; 调用次数、Token 消耗仪表盘，按角色配额管理
-- [ ] 结构化审查结果（JSON issue 列表，按严重度/文件/行号展示）
-- [ ] 用量统计与配额（token 消耗、操作次数、按角色限流）
-- [ ] MCP 工具协议对接（Git API、GitHub/GitLab）
-- [ ] 编码规范 Middleware 注入
-- [ ] Plan Mode 长任务（全面重构、跨文件修改）
-- [ ] HITL 审批（敏感文件操作需确认）
-- [ ] 多仓库管理 + 仓库对比
-
 ## 错误码
 
 | 错误码 | 说明 |
@@ -390,6 +377,7 @@ code-butler/
 | 40000 | 参数错误 |
 | 40100 | 未登录 |
 | 40101 | 无权限 |
+| 40301 | 使用额度已超限 |
 | 50000 | 系统内部异常 |
 
 ## License

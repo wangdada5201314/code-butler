@@ -2,6 +2,7 @@ package com.agent.codebutler;
 
 import com.agent.codebutler.service.GeneralChatService;
 import com.agent.codebutler.service.OperationRecordService;
+import com.agent.codebutler.service.QuotaConfigService;
 import com.agent.codebutler.service.UsageService;
 import com.agent.codebutler.service.UserService;
 import com.agent.codebutler.service.UserPreferenceService;
@@ -36,6 +37,9 @@ class CodeButlerApplicationTests {
 
     @MockBean
     private UsageService usageService;
+
+    @MockBean
+    private QuotaConfigService quotaConfigService;
 
     @Test
     void contextLoads() {

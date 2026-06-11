@@ -1,5 +1,6 @@
 package com.agent.codebutler.model.vo;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -61,5 +62,6 @@ public class UsageStatsVO {
     private int docDailyRemaining;
 
     /** 是否为管理员（不限配额） */
+    @JsonProperty("isAdmin")
     private boolean isAdmin;
 }
