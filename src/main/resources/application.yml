@@ -115,6 +115,10 @@ app:
     # ⚠️ 生产环境务必通过 APP_PASSWORD_SALT 环境变量设置独立盐值
     password-salt: ${APP_PASSWORD_SALT:code-butler}
 
+# ── GitHub ──
+github:
+  token: ${GITHUB_TOKEN:}
+
 # ── 用量配额 ──
 quota:
   review:

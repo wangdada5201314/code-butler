@@ -3,6 +3,8 @@ package com.agent.codebutler.config;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.OpenAIChatModel;
+import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import org.slf4j.Logger;
@@ -11,6 +13,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -48,12 +52,45 @@ public class AgentConfig {
     @Value("${openai.base-url:#{null}}")
     private String openaiBaseUrl;
 
+    @Value("${github.token:}")
+    private String githubToken;
+
+    /**
+     * 清理 Agent 持久化状态文件。
+     * <p>
+     * AgentScope 会将 Agent 状态（包括权限模式）序列化到 agent_state.json。
+     * 当 Builder 中的权限设置更新后（如从 DEFAULT 改为 BYPASS），旧的状态文件
+     * 会覆盖 Builder 设置，导致权限模式不生效。
+     * 每次启动时清理状态文件，确保使用 Builder 中的最新配置。
+     */
+    private void cleanAgentState(Path workspaceDir) {
+        try {
+            // AgentScope 状态路径: {workspace}/agents/{agentName}/context/{agentName}/agent_state.json
+            Path stateFile = workspaceDir
+                    .resolve("agents").resolve("code-butler")
+                    .resolve("context").resolve("code-butler")
+                    .resolve("agent_state.json");
+            if (Files.exists(stateFile)) {
+                Files.delete(stateFile);
+                log.info("已清理旧的 Agent 状态文件: {}", stateFile);
+            }
+        } catch (IOException e) {
+            log.warn("清理 Agent 状态文件失败: {}", e.getMessage());
+        }
+    }
+
     @Bean
     public HarnessAgent codeButlerAgent() {
         // 从 yml 读取的 Key 注册模型，这样不依赖环境变量
         preRegisterModels();
 
         Path workspaceDir = Paths.get(workspacePath);
+
+        // 清理旧状态文件，防止持久化的权限模式覆盖 Builder 设置
+        cleanAgentState(workspaceDir);
+
+        // 确保 workspace 目录和 MCP tools.json 存在
+        ensureWorkspaceToolsConfig(workspaceDir);
 
         HarnessAgent agent = HarnessAgent.builder()
                 .name("code-butler")
@@ -64,15 +101,21 @@ public class AgentConfig {
                         2. **代码问答**：回答关于仓库中代码的任何问题
                         3. **文档生成**：自动生成 README、CHANGELOG、API 文档
                         4. **技术决策**：对比多种实现方案，给出推荐
+                        5. **GitHub 远程仓库**：可通过 MCP 工具读取 GitHub 仓库的文件、提交历史和 PR
 
                         工作原则：
                         - 先理解代码全貌，再给出建议
+                        - 对于 GitHub 仓库，使用 MCP 工具列出目录结构、读取关键文件，至少浏览 5-8 个重要源文件
                         - 推荐基于项目现有技术栈的方案，不要引入不必要的新依赖
                         - 代码修改前明确说明风险和影响范围
                         - 保持专业但友好的沟通风格
                         """)
                 .model(defaultModel)
                 .workspace(workspaceDir)
+                // BYPASS 模式：自动批准所有工具调用（包括 MCP），无需人工确认
+                .permissionContext(PermissionContextState.builder()
+                        .mode(PermissionMode.BYPASS)
+                        .build())
                 .compaction(CompactionConfig.builder()
                         .triggerMessages(triggerMessages)
                         .keepMessages(keepMessages)
@@ -131,5 +174,64 @@ public class AgentConfig {
     private static String extractModelName(String modelTag) {
         int idx = modelTag.indexOf(':');
         return idx >= 0 ? modelTag.substring(idx + 1) : modelTag;
+    }
+
+    /**
+     * 确保 workspace 目录存在，并自动生成 MCP tools.json。
+     * <p>
+     * GitHub Token 优先使用 GITHUB_TOKEN 环境变量，其次使用 yml 中的 github.token。
+     * Token 直接写入 tools.json（workspace 目录已在 .gitignore 中，不会被提交）。
+     * 每次启动都会重新生成，确保配置与 yml/环境变量保持同步。
+     */
+    private void ensureWorkspaceToolsConfig(Path workspaceDir) {
+        try {
+            Files.createDirectories(workspaceDir);
+
+            Path toolsJson = workspaceDir.resolve("tools.json");
+
+            // Token 优先级：环境变量 > yml 配置
+            String token = System.getenv("GITHUB_TOKEN");
+            if (token == null || token.isBlank()) {
+                token = githubToken;
+            }
+
+            if (token == null || token.isBlank()) {
+                log.warn("GitHub Token 未配置（环境变量 GITHUB_TOKEN 或 yml github.token），GitHub MCP 功能不可用");
+                // 不生成 tools.json，避免 MCP 启动失败
+                // 如果之前有旧的 tools.json，删除以避免空 token 启动报错
+                if (Files.exists(toolsJson)) {
+                    Files.delete(toolsJson);
+                    log.info("已删除旧的 tools.json（Token 未配置）");
+                }
+                return;
+            }
+
+            log.info("GitHub Token 已配置，MCP 远程仓库审查功能可用");
+
+            // Windows 上 Java ProcessBuilder 无法直接运行 npx，需要 npx.cmd
+            boolean isWindows = System.getProperty("os.name", "").toLowerCase().contains("win");
+            String npxCommand = isWindows ? "npx.cmd" : "npx";
+
+            String toolsConfig = String.format("""
+                    {
+                      "mcpServers": {
+                        "github": {
+                          "transport": "stdio",
+                          "command": "%s",
+                          "args": ["-y", "@modelcontextprotocol/server-github"],
+                          "env": {
+                            "GITHUB_PERSONAL_ACCESS_TOKEN": "%s"
+                          }
+                        }
+                      }
+                    }
+                    """, npxCommand, token);
+
+            Files.writeString(toolsJson, toolsConfig);
+            log.info("MCP tools.json 已生成: {}", toolsJson);
+
+        } catch (IOException e) {
+            log.warn("生成 MCP tools.json 失败，GitHub MCP 功能将不可用: {}", e.getMessage());
+        }
     }
 }

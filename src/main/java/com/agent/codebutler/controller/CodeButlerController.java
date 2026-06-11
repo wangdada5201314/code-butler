@@ -69,10 +69,10 @@ public class CodeButlerController {
     @PostMapping("/review")
     @AuthCheck(mustRole = "user")
     @QuotaCheck(opType = "REVIEW")
-    @Operation(summary = "代码审查", description = "对指定仓库路径进行全面的代码审查")
+    @Operation(summary = "代码审查", description = "对指定仓库进行全面的代码审查，支持本地路径和 GitHub URL")
     public ApiResponse<CodeReviewResult> review(
             @RequestParam @NotBlank(message = "仓库路径不能为空")
-            @Parameter(description = "仓库本地路径") String repoPath,
+            @Parameter(description = "仓库本地路径或 GitHub URL") String repoPath,
             HttpServletRequest request) {
         try {
             Long userId = userService.getLoginUserIdOrNull(request);

@@ -49,13 +49,15 @@ export default function ReviewPanel({ darkMode }) {
         <Box sx={{ display: 'flex', gap: 1.5, mb: 2 }}>
           <TextField
             fullWidth
-            label="仓库路径"
-            placeholder="E:/my-project"
+            label="仓库路径 / GitHub URL"
+            placeholder="E:/my-project 或 https://github.com/owner/repo"
             value={repoPath}
             onChange={(e) => setRepoPath(e.target.value)}
             disabled={loading}
             size="small"
             sx={{ flex: 1 }}
+            helperText={repoPath.trim().match(/github\.com/) ? '🌐 GitHub 仓库将通过 MCP 远程读取' : ''}
+            FormHelperTextProps={{ sx: { fontSize: '0.68rem', color: 'var(--accent-secondary)', ml: 0.5 } }}
           />
           <Button
             variant="contained"
@@ -141,7 +143,7 @@ export default function ReviewPanel({ darkMode }) {
               <BugReportIcon sx={{ fontSize: 24, color: 'var(--text-muted)' }} />
             </Box>
             <Typography sx={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              输入仓库路径并点击「开始审查」
+              输入本地仓库路径或 GitHub URL，点击「开始审查」
             </Typography>
           </Box>
         )}

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.0.0-blue?style=flat-square" alt="v2.0.0" />
+  <img src="https://img.shields.io/badge/version-3.0.0-blue?style=flat-square" alt="v3.0.0" />
   <img src="https://img.shields.io/badge/Java-21-orange?style=flat-square&logo=openjdk" alt="Java 21" />
   <img src="https://img.shields.io/badge/Spring%20Boot-3.3.5-6DB33F?style=flat-square&logo=springboot" alt="Spring Boot 3.3" />
   <img src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React 18" />
@@ -12,7 +12,7 @@
 
 <p align="center">
   <strong>基于 AgentScope 2.0 + Spring Boot 3.3 构建的 AI 代码助手</strong><br/>
-  代码审查 &middot; 智能问答 &middot; 文档生成 &middot; 通用聊天 &middot; 用量统计 &mdash; 一站式 AI 开发体验
+  代码审查（本地 + GitHub） &middot; 智能问答 &middot; 文档生成 &middot; 通用聊天 &middot; 用量统计 &mdash; 一站式 AI 开发体验
 </p>
 
 ---
@@ -23,7 +23,7 @@
   <tr>
     <td width="50%" valign="top">
       <h3>代码审查</h3>
-      <p>AI 逐行扫描代码仓库，发现潜在 Bug、安全漏洞和性能问题。支持自定义审查偏好（关注点、深度、指令），审查结果按严重度/文件/行号结构化展示。</p>
+      <p>AI 逐行扫描代码仓库，发现潜在 Bug、安全漏洞和性能问题。支持本地路径和 GitHub URL（通过 MCP 远程读取），支持自定义审查偏好，结果按严重度结构化展示。</p>
     </td>
     <td width="50%" valign="top">
       <h3>智能问答</h3>
@@ -190,7 +190,7 @@ cd frontend && npm install && npm run dev
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `GET` | `/api/code/health` | 健康检查 |
-| `POST` | `/api/code/review` | 代码审查（阻塞式） |
+| `POST` | `/api/code/review` | 代码审查（支持本地路径和 GitHub URL） |
 | `POST` | `/api/code/chat/stream` | 流式问答（SSE） |
 | `POST` | `/api/code/chat/general/stream` | 通用聊天（SSE，无需仓库） |
 | `GET` | `/api/code/usage` | 用量统计（今日/本月调用、Token、配额） |
@@ -228,6 +228,27 @@ cd frontend && npm install && npm run dev
 | 智谱 GLM | `openai:glm-4` | `OPENAI_API_KEY` + `OPENAI_BASE_URL` |
 
 切换模型只需修改 `AGENTSCOPE_MODEL` 环境变量。
+
+## GitHub MCP 集成
+
+代码审查支持直接输入 GitHub URL（如 `https://github.com/owner/repo`），Agent 通过 MCP 协议远程读取仓库文件。
+
+### 配置步骤
+
+1. 安装 Node.js（已安装可跳过）
+2. 创建 GitHub Personal Access Token：[Settings → Developer settings → Personal access tokens](https://github.com/settings/tokens)，权限勾选 `repo`
+3. 配置 Token（二选一）：
+
+```bash
+# 方式一：环境变量
+export GITHUB_TOKEN=ghp_xxxxxxxxxxxx
+
+# 方式二：application-local.yml
+github:
+  token: ghp_xxxxxxxxxxxx
+```
+
+启动后端时会自动在 workspace 目录生成 `tools.json`，AgentScope 通过 stdio 启动 `npx @modelcontextprotocol/server-github` 进程提供 GitHub 读取工具。
 
 ## 配置说明
 

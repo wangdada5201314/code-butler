@@ -3,6 +3,8 @@ package com.agent.codebutler.service;
 import com.agent.codebutler.mapper.OperationRecordMapper;
 import com.agent.codebutler.model.entity.OperationRecord;
 import com.agent.codebutler.model.vo.UsageStatsVO;
+import com.mybatisflex.core.query.QueryColumn;
+import com.mybatisflex.core.query.QueryMethods;
 import com.mybatisflex.core.query.QueryWrapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,7 +12,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.List;
 
 /**
  * 用量统计与配额服务
@@ -155,17 +156,15 @@ public class UsageService {
                 .eq(OperationRecord::getUserId, userId)
                 .eq(OperationRecord::getOpType, opType)
                 .ge(OperationRecord::getCreateTime, since);
-        List<OperationRecord> records = operationRecordMapper.selectListByQuery(query);
-        return records.size();
+        return (int) operationRecordMapper.selectCountByQuery(query);
     }
 
     private long sumTokens(long userId, LocalDateTime since) {
         QueryWrapper query = QueryWrapper.create()
+                .select(QueryMethods.sum(new QueryColumn("tokenCount")))
                 .eq(OperationRecord::getUserId, userId)
                 .ge(OperationRecord::getCreateTime, since);
-        List<OperationRecord> records = operationRecordMapper.selectListByQuery(query);
-        return records.stream()
-                .mapToLong(r -> r.getTokenCount() != null ? r.getTokenCount() : 0)
-                .sum();
+        Long result = operationRecordMapper.selectObjectByQueryAs(query, Long.class);
+        return result != null ? result : 0;
     }
 }
