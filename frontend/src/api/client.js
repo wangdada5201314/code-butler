@@ -49,7 +49,7 @@ export function checkHealth() {
 }
 
 /**
- * Submit code review request.
+ * Submit code review request (synchronous, legacy).
  * @param {string} repoPath - absolute path to repository
  * @returns {Promise<any>}
  */
@@ -57,6 +57,15 @@ export function reviewCode(repoPath) {
   return request(`/code/review?repoPath=${encodeURIComponent(repoPath)}`, {
     method: 'POST',
   });
+}
+
+/**
+ * Get the streaming review SSE endpoint URL.
+ * @param {string} repoPath - absolute path to repository or GitHub URL
+ * @returns {string} endpoint URL for use with useSSE hook
+ */
+export function getReviewStreamUrl(repoPath) {
+  return `/api/code/review/stream?repoPath=${encodeURIComponent(repoPath)}`;
 }
 
 /**

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-3.0.0-blue?style=flat-square" alt="v3.0.0" />
+  <img src="https://img.shields.io/badge/version-3.1.0-blue?style=flat-square" alt="v3.1.0" />
   <img src="https://img.shields.io/badge/Java-21-orange?style=flat-square&logo=openjdk" alt="Java 21" />
   <img src="https://img.shields.io/badge/Spring%20Boot-3.3.5-6DB33F?style=flat-square&logo=springboot" alt="Spring Boot 3.3" />
   <img src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React 18" />
@@ -44,6 +44,10 @@
 
 **更多能力：**
 
+- **Plan Mode 规划模式** &mdash; 复杂审查任务时 Agent 先制定分步计划，再逐步执行，推理过程透明可见
+- **自定义分析工具** &mdash; Agent 内置 4 个 Java 原生工具：代码搜索、行数统计、圈复杂度计算、代码坏味道检测
+- **Middleware 编码规范注入** &mdash; 通过 Middleware 架构动态注入编码规范到系统提示词，工具调用全程可观测
+- **流式代码审查** &mdash; 审查结果通过 SSE 实时推送，工具调用过程可视化，告别长时间等待
 - **用户级 Agent 记忆** &mdash; 每个用户拥有独立的 AI 会话记忆，AI 逐步学习你的偏好和风格
 - **审查偏好配置** &mdash; 自定义关注点（安全/性能/架构/命名/可读性）、审查深度和指令，自动融入 AI prompt
 - **收藏仓库** &mdash; 收藏常用仓库路径，各功能面板一键选择，免去重复输入
@@ -62,14 +66,18 @@
 ├───────────────────────────────────────────────────────────────┤
 │                    Backend (Spring Boot 3.3.5)                 │
 │     Controller → Service → AgentScope Harness Agent           │
+│                  ↘ Middleware: 编码规范注入 + 可观测性追踪     │
+│                  ↘ Toolkit: 代码搜索/复杂度/坏味道 @Tool      │
+│                  ↘ Plan Mode: 复杂任务分步规划                │
 │                  ↘ OperationRecordService (异步记录)           │
 │                  ↘ UserPreferenceService (偏好融入 prompt)     │
 │                      Port: 8080                               │
 ├─────────────────────────┬─────────────────────────────────────┤
 │    AgentScope 2.0       │      Infrastructure (Docker)        │
 │    DeepSeek/Qwen/GLM    │      MySQL 8.0  +  Redis 7          │
-│    用户级记忆绑定        │      user + operation_record 表     │
-│    偏好驱动审查          │      user_preference + favorite_repo│
+│    MCP (GitHub) + @Tool │      user + operation_record 表     │
+│    用户级记忆绑定        │      user_preference + favorite_repo│
+│    Plan Mode + Middleware│      quota_config                   │
 └─────────────────────────┴─────────────────────────────────────┘
 ```
 
@@ -190,7 +198,8 @@ cd frontend && npm install && npm run dev
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `GET` | `/api/code/health` | 健康检查 |
-| `POST` | `/api/code/review` | 代码审查（支持本地路径和 GitHub URL） |
+| `POST` | `/api/code/review` | 代码审查（同步，支持本地路径和 GitHub URL） |
+| `POST` | `/api/code/review/stream` | 代码审查（流式 SSE，实时推送审查过程和工具调用） |
 | `POST` | `/api/code/chat/stream` | 流式问答（SSE） |
 | `POST` | `/api/code/chat/general/stream` | 通用聊天（SSE，无需仓库） |
 | `GET` | `/api/code/usage` | 用量统计（今日/本月调用、Token、配额） |
@@ -316,13 +325,17 @@ code-butler/
 │   ├── controller/                      # REST API 控制器
 │   ├── dto/                             # 请求/响应 DTO
 │   ├── service/                         # 业务编排服务
-│   │   ├── CodeReviewService            #   代码审查
+│   │   ├── CodeReviewService            #   代码审查（同步 + 流式）
 │   │   ├── ChatService                  #   智能问答
 │   │   ├── GeneralChatService           #   通用聊天
 │   │   ├── DocGenerationService         #   文档生成
 │   │   ├── UsageService                 #   用量统计与配额
 │   │   ├── UserPreferenceService        #   用户偏好
 │   │   └── ...
+│   ├── tools/                           # Agent 自定义 @Tool 工具
+│   │   └── CodeAnalysisTools            #   代码搜索/复杂度/坏味道检测
+│   ├── middleware/                       # AgentScope Middleware
+│   │   └── CodingStandardsMiddleware    #   编码规范注入 + 可观测性追踪
 │   ├── model/                           # 实体 / VO / 枚举
 │   ├── mapper/                          # MyBatis-Flex Mapper
 │   ├── annotation/ + aop/               # 自定义鉴权

@@ -69,7 +69,7 @@ public class CodeButlerController {
     @PostMapping("/review")
     @AuthCheck(mustRole = "user")
     @QuotaCheck(opType = "REVIEW")
-    @Operation(summary = "代码审查", description = "对指定仓库进行全面的代码审查，支持本地路径和 GitHub URL")
+    @Operation(summary = "代码审查（同步）", description = "对指定仓库进行全面的代码审查，支持本地路径和 GitHub URL")
     public ApiResponse<CodeReviewResult> review(
             @RequestParam @NotBlank(message = "仓库路径不能为空")
             @Parameter(description = "仓库本地路径或 GitHub URL") String repoPath,
@@ -82,6 +82,22 @@ public class CodeButlerController {
             log.error("代码审查失败: repoPath={}", repoPath, e);
             return ApiResponse.error(500, "代码审查失败: " + e.getMessage());
         }
+    }
+
+    @PostMapping(value = "/review/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @AuthCheck(mustRole = "user")
+    @QuotaCheck(opType = "REVIEW")
+    @Operation(summary = "代码审查（流式）", description = "基于 SSE 的流式代码审查，实时返回审查进度、工具调用和 AI 分析结果")
+    public Flux<ServerSentEvent<String>> reviewStream(@RequestBody java.util.Map<String, String> body,
+                                                       HttpServletRequest request) {
+        String repoPath = body.get("repoPath");
+        if (repoPath == null || repoPath.isBlank()) {
+            return Flux.just(
+                    ServerSentEvent.<String>builder().event("error").data("[ERROR] 仓库路径不能为空").build(),
+                    ServerSentEvent.<String>builder().event("done").data("[DONE]").build());
+        }
+        Long userId = userService.getLoginUserIdOrNull(request);
+        return codeReviewService.streamReview(repoPath, userId);
     }
 
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

@@ -2,6 +2,9 @@ package com.agent.codebutler.service;
 
 import com.agent.codebutler.dto.CodeReviewResult;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.AgentEventType;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.UserMessage;
@@ -9,7 +12,10 @@ import io.agentscope.harness.agent.HarnessAgent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.util.List;
@@ -65,6 +71,143 @@ public class CodeReviewService {
 
         // 本地仓库审查（原有逻辑）
         return reviewLocal(repoPath, userId);
+    }
+
+    /**
+     * 流式代码审查 — 返回 SSE 事件流，实时推送审查进度和内容
+     * <p>
+     * 复用 ChatService 的 SSE 模式，支持工具调用通知和增量文本推送。
+     *
+     * @param repoPath 仓库路径或 GitHub URL
+     * @param userId   当前登录用户 ID（可为 null）
+     */
+    public Flux<ServerSentEvent<String>> streamReview(String repoPath, Long userId) {
+        String sessionId = "review-" + UUID.randomUUID().toString().substring(0, 8);
+        boolean isGitHub = GitHubService.isGitHubUrl(repoPath);
+        String agentUserId = userId != null ? "review-" + userId : "code-reviewer";
+
+        log.info("开始流式代码审查: sessionId={}, repoPath={}, isGitHub={}", sessionId, repoPath, isGitHub);
+
+        // 记录操作历史
+        operationRecordService.recordAsync(userId, "REVIEW", repoPath,
+                null, null, 0, sessionId, "COMPLETED", 0);
+
+        return Mono.fromCallable(() -> {
+                    String prompt = buildReviewPrompt(repoPath, isGitHub, userId);
+
+                    RuntimeContext ctx = RuntimeContext.builder()
+                            .sessionId(sessionId)
+                            .userId(agentUserId)
+                            .build();
+
+                    return agent.streamEvents(new UserMessage(prompt), ctx);
+                })
+                .flatMapMany(flux -> flux
+                        .flatMap(event -> {
+                            if (event.getType() == AgentEventType.TEXT_BLOCK_DELTA) {
+                                String delta = ((TextBlockDeltaEvent) event).getDelta();
+                                return Mono.just(ServerSentEvent.<String>builder()
+                                        .data(delta)
+                                        .build());
+                            } else if (event.getType() == AgentEventType.TOOL_CALL_START) {
+                                String toolName = ((ToolCallStartEvent) event).getToolCallName();
+                                return Mono.just(ServerSentEvent.<String>builder()
+                                        .event("tool")
+                                        .data("[调用工具: " + toolName + "]")
+                                        .build());
+                            }
+                            return Mono.<ServerSentEvent<String>>empty();
+                        })
+                        .concatWith(Flux.just(
+                                ServerSentEvent.<String>builder()
+                                        .event("done")
+                                        .data("[DONE]")
+                                        .build()))
+                        .onErrorResume(e -> {
+                            log.error("流式审查异常: sessionId={}", sessionId, e);
+                            String safeMsg = sanitizeSseError(e.getMessage());
+                            return Flux.just(
+                                    ServerSentEvent.<String>builder()
+                                            .event("error")
+                                            .data("[ERROR] " + safeMsg)
+                                            .build(),
+                                    ServerSentEvent.<String>builder()
+                                            .event("done")
+                                            .data("[DONE]")
+                                            .build());
+                        })
+                )
+                .timeout(Duration.ofSeconds(agentCallTimeoutSeconds + 60),
+                        Flux.just(
+                                ServerSentEvent.<String>builder()
+                                        .event("error")
+                                        .data("[ERROR] 审查超时")
+                                        .build(),
+                                ServerSentEvent.<String>builder()
+                                        .event("done")
+                                        .data("[DONE]")
+                                        .build()))
+                .onErrorResume(e -> {
+                    log.error("流式审查启动失败: repoPath={}", repoPath, e);
+                    String safeMsg = sanitizeSseError(e.getMessage());
+                    return Flux.just(
+                            ServerSentEvent.<String>builder()
+                                    .event("error")
+                                    .data("[ERROR] " + safeMsg)
+                                    .build(),
+                            ServerSentEvent.<String>builder()
+                                    .event("done")
+                                    .data("[DONE]")
+                                    .build());
+                });
+    }
+
+    /**
+     * 构建审查 prompt（本地和 GitHub 共用）
+     */
+    private String buildReviewPrompt(String repoPath, boolean isGitHub, Long userId) throws Exception {
+        if (isGitHub) {
+            String[] parsed = GitHubService.parseGitHubUrl(repoPath);
+            if (parsed == null) throw new IllegalArgumentException("无效的 GitHub URL: " + repoPath);
+            String repoDesc = GitHubService.formatGitHubRepo(parsed[0], parsed[1]);
+            return String.format("""
+                    请对 GitHub 仓库 %s 进行一次全面的代码审查。
+
+                    你可以使用以下工具来探索这个仓库：
+                    - MCP 工具：列出目录、读取文件、查看提交和 PR
+                    - 代码分析工具：search_code_files、count_code_lines、calculate_complexity、detect_code_smells
+
+                    %s
+
+                    请用中文回复，每个问题标注严重程度（🔴严重 🟡建议 🟢优化）。
+                    """, repoDesc, userPreferenceService.buildPreferencePrompt(userId));
+        }
+
+        GitService.validateRepoPath(repoPath);
+        String overview = codeScanner.getRepoOverview(repoPath);
+        String gitStatus = gitService.getRepoStatus(repoPath);
+        String gitChanges = gitService.getStagedDiff(repoPath);
+        return String.format("""
+                请对这个代码仓库进行一次全面的代码审查。
+
+                你可以使用代码分析工具（search_code_files、count_code_lines、calculate_complexity、detect_code_smells）深入分析代码质量。
+
+                %s
+
+                %s
+
+                %s
+
+                %s
+
+                请用中文回复，每个问题标注严重程度（🔴严重 🟡建议 🟢优化）。
+                """, overview, gitStatus, gitChanges,
+                userPreferenceService.buildPreferencePrompt(userId));
+    }
+
+    private String sanitizeSseError(String msg) {
+        if (msg == null) return "未知错误";
+        return msg.replace("\n", " ").replace("\r", "");
     }
 
     /**
