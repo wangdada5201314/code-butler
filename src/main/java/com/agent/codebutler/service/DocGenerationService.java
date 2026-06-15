@@ -1,6 +1,7 @@
 package com.agent.codebutler.service;
 
 import com.agent.codebutler.dto.DocGenerateResult;
+import com.agent.codebutler.tools.MemoryTools;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.harness.agent.HarnessAgent;
@@ -26,16 +27,19 @@ public class DocGenerationService {
     private final HarnessAgent agent;
     private final CodeScannerService codeScanner;
     private final OperationRecordService operationRecordService;
+    private final MemoryTools memoryTools;
 
     @Value("${agentscope.call-timeout-seconds:120}")
     private int agentCallTimeoutSeconds;
 
     public DocGenerationService(HarnessAgent agent,
                                 CodeScannerService codeScanner,
-                                OperationRecordService operationRecordService) {
+                                OperationRecordService operationRecordService,
+                                MemoryTools memoryTools) {
         this.agent = agent;
         this.codeScanner = codeScanner;
         this.operationRecordService = operationRecordService;
+        this.memoryTools = memoryTools;
     }
 
     public boolean isValidDocType(String docType) {
@@ -82,10 +86,17 @@ public class DocGenerationService {
                 .userId(agentUserId)
                 .build();
 
-        String result = CodeReviewService.extractText(
-                agent.call(new UserMessage(prompt), ctx)
-                        .timeout(Duration.ofSeconds(agentCallTimeoutSeconds))
-                        .block());
+        // 设置 MemoryTools userId，确保同步调用时工具可读写用户记忆
+        if (userId != null) memoryTools.setUserId(userId);
+        String result;
+        try {
+            result = CodeReviewService.extractText(
+                    agent.call(new UserMessage(prompt), ctx)
+                            .timeout(Duration.ofSeconds(agentCallTimeoutSeconds))
+                            .block());
+        } finally {
+            if (userId != null) memoryTools.clearUserId();
+        }
 
         long durationMs = System.currentTimeMillis() - startTime;
         log.info("文档生成完成: sessionId={}, duration={}ms", sessionId, durationMs);

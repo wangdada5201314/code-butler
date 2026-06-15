@@ -1,6 +1,9 @@
 package com.agent.codebutler.service;
 
 import com.agent.codebutler.dto.CodeReviewResult;
+import com.agent.codebutler.middleware.AgentTraceEvent;
+import com.agent.codebutler.middleware.AgentTraceMiddleware;
+import com.agent.codebutler.tools.MemoryTools;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEventType;
 import io.agentscope.core.event.TextBlockDeltaEvent;
@@ -16,11 +19,17 @@ import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * 代码审查编排服务
@@ -38,6 +47,8 @@ public class CodeReviewService {
     private final GitService gitService;
     private final OperationRecordService operationRecordService;
     private final UserPreferenceService userPreferenceService;
+    private final MemoryTools memoryTools;
+    private final AgentTraceMiddleware agentTraceMiddleware;
 
     @Value("${agentscope.call-timeout-seconds:120}")
     private int agentCallTimeoutSeconds;
@@ -49,12 +60,16 @@ public class CodeReviewService {
                              CodeScannerService codeScanner,
                              GitService gitService,
                              OperationRecordService operationRecordService,
-                             UserPreferenceService userPreferenceService) {
+                             UserPreferenceService userPreferenceService,
+                             MemoryTools memoryTools,
+                             AgentTraceMiddleware agentTraceMiddleware) {
         this.agent = agent;
         this.codeScanner = codeScanner;
         this.gitService = gitService;
         this.operationRecordService = operationRecordService;
         this.userPreferenceService = userPreferenceService;
+        this.memoryTools = memoryTools;
+        this.agentTraceMiddleware = agentTraceMiddleware;
     }
 
     /**
@@ -93,6 +108,18 @@ public class CodeReviewService {
                 null, null, 0, sessionId, "COMPLETED", 0);
 
         return Mono.fromCallable(() -> {
+                    // 在有界弹性线程上设置 ThreadLocal，确保子线程继承 userId
+                    if (userId != null) memoryTools.setUserId(userId);
+
+                    // 创建追踪事件通道
+                    Sinks.Many<AgentTraceEvent> traceSink = Sinks.many().multicast().onBackpressureBuffer();
+                    agentTraceMiddleware.setTraceConsumer(event -> {
+                        traceSink.tryEmitNext(event);
+                    });
+
+                    // 文本累积器（用数组以便在 lambda 中引用）
+                    StringBuilder[] textAccumulatorRef = {new StringBuilder()};
+
                     String prompt = buildReviewPrompt(repoPath, isGitHub, userId);
 
                     RuntimeContext ctx = RuntimeContext.builder()
@@ -100,12 +127,25 @@ public class CodeReviewService {
                             .userId(agentUserId)
                             .build();
 
-                    return agent.streamEvents(new UserMessage(prompt), ctx);
-                })
-                .flatMapMany(flux -> flux
+                    // 追踪事件 Flux：序列化为 JSON SSE 事件
+                    Flux<ServerSentEvent<String>> traceFlux = traceSink.asFlux()
+                            .map(event -> {
+                                try {
+                                    String json = OBJECT_MAPPER.writeValueAsString(event);
+                                    return ServerSentEvent.<String>builder()
+                                            .event("trace")
+                                            .data(json)
+                                            .build();
+                                } catch (Exception e) {
+                                    return ServerSentEvent.<String>builder().build();
+                                }
+                            });
+
+                    Flux<ServerSentEvent<String>> mainFlux = agent.streamEvents(new UserMessage(prompt), ctx)
                         .flatMap(event -> {
                             if (event.getType() == AgentEventType.TEXT_BLOCK_DELTA) {
                                 String delta = ((TextBlockDeltaEvent) event).getDelta();
+                                textAccumulatorRef[0].append(delta);
                                 return Mono.just(ServerSentEvent.<String>builder()
                                         .data(delta)
                                         .build());
@@ -118,12 +158,25 @@ public class CodeReviewService {
                             }
                             return Mono.<ServerSentEvent<String>>empty();
                         })
+                        .concatWith(Mono.fromCallable(() -> {
+                            // 流结束后，解析结构化 issues 并通过 summary 事件发送
+                            List<CodeReviewResult.CodeIssue> issues = parseIssues(textAccumulatorRef[0].toString());
+                            String issuesJson = OBJECT_MAPPER.writeValueAsString(issues);
+                            return ServerSentEvent.<String>builder()
+                                    .event("summary")
+                                    .data(issuesJson)
+                                    .build();
+                        }).flux())
                         .concatWith(Flux.just(
                                 ServerSentEvent.<String>builder()
                                         .event("done")
                                         .data("[DONE]")
-                                        .build()))
-                        .onErrorResume(e -> {
+                                        .build()));
+
+                    return Flux.merge(mainFlux, traceFlux);
+                })
+                .flatMapMany(flux -> flux)
+                .onErrorResume(e -> {
                             log.error("流式审查异常: sessionId={}", sessionId, e);
                             String safeMsg = sanitizeSseError(e.getMessage());
                             return Flux.just(
@@ -136,7 +189,6 @@ public class CodeReviewService {
                                             .data("[DONE]")
                                             .build());
                         })
-                )
                 .timeout(Duration.ofSeconds(agentCallTimeoutSeconds + 60),
                         Flux.just(
                                 ServerSentEvent.<String>builder()
@@ -159,6 +211,10 @@ public class CodeReviewService {
                                     .event("done")
                                     .data("[DONE]")
                                     .build());
+                })
+                .doFinally(signal -> {
+                    if (userId != null) memoryTools.clearUserId();
+                    agentTraceMiddleware.clearTraceConsumer();
                 });
     }
 
@@ -265,9 +321,16 @@ public class CodeReviewService {
                 .userId(agentUserId)
                 .build();
 
-        String result = extractText(agent.call(new UserMessage(prompt), ctx)
-                .timeout(Duration.ofSeconds(agentCallTimeoutSeconds))
-                .block());
+        // 设置 MemoryTools userId，确保同步调用时工具可读写用户记忆
+        if (userId != null) memoryTools.setUserId(userId);
+        String result;
+        try {
+            result = extractText(agent.call(new UserMessage(prompt), ctx)
+                    .timeout(Duration.ofSeconds(agentCallTimeoutSeconds))
+                    .block());
+        } finally {
+            if (userId != null) memoryTools.clearUserId();
+        }
 
         long durationMs = System.currentTimeMillis() - startTime;
         log.info("GitHub 代码审查完成: sessionId={}, repo={}, duration={}ms", sessionId, repoDesc, durationMs);
@@ -284,6 +347,7 @@ public class CodeReviewService {
                 .repoPath(githubUrl)
                 .overview(overview)
                 .review(result)
+                .issues(parseIssues(result))
                 .build();
     }
 
@@ -329,9 +393,16 @@ public class CodeReviewService {
                 .userId(agentUserId)
                 .build();
 
-        String result = extractText(agent.call(new UserMessage(prompt), ctx)
-                .timeout(Duration.ofSeconds(agentCallTimeoutSeconds))
-                .block());
+        // 设置 MemoryTools userId，确保同步调用时工具可读写用户记忆
+        if (userId != null) memoryTools.setUserId(userId);
+        String result;
+        try {
+            result = extractText(agent.call(new UserMessage(prompt), ctx)
+                    .timeout(Duration.ofSeconds(agentCallTimeoutSeconds))
+                    .block());
+        } finally {
+            if (userId != null) memoryTools.clearUserId();
+        }
 
         long durationMs = System.currentTimeMillis() - startTime;
         log.info("本地代码审查完成: sessionId={}, duration={}ms", sessionId, durationMs);
@@ -345,8 +416,86 @@ public class CodeReviewService {
                 .repoPath(repoPath)
                 .overview(overview)
                 .review(result)
+                .issues(parseIssues(result))
                 .build();
     }
+
+    /**
+     * 从 Agent 返回的自由文本中解析结构化代码问题。
+     * <p>
+     * 解析规则：
+     * 1. 匹配严重程度标记：🔴(严重/critical) 🟡(建议/warning) 🟢(优化/info)
+     * 2. 尝试从行中提取文件路径（含扩展名的路径片段）和行号
+     * 3. 取标记所在行 + 下一行作为问题描述
+     */
+    static List<CodeReviewResult.CodeIssue> parseIssues(String reviewText) {
+        List<CodeReviewResult.CodeIssue> issues = new ArrayList<>();
+        if (reviewText == null || reviewText.isBlank()) return issues;
+
+        // 匹配: 🔴 或 🟡 或 🟢 开头的行（允许前导空白和 "-"、"*" 等列表符）
+        Pattern severityPattern = Pattern.compile(
+                "^\\s*[-*]?\\s*(🔴|🟡|🟢)\\s*(?:[严重|建议|优化|critical|warning|info]*\\s*)[:\\-—]?\\s*(.*)",
+                Pattern.MULTILINE);
+
+        // 文件路径模式：xxx/yyy.ext 或 xxx.ext
+        Pattern filePathPattern = Pattern.compile("([\\w./\\\\-]+\\.[a-zA-Z]{1,5})(?::(\\d+))?");
+
+        Matcher matcher = severityPattern.matcher(reviewText);
+
+        while (matcher.find() && issues.size() < 50) { // 最多提取 50 个
+            String emoji = matcher.group(1);
+            String description = matcher.group(2).trim();
+
+            String severity = switch (emoji) {
+                case "🔴" -> "critical";
+                case "🟡" -> "warning";
+                case "🟢" -> "info";
+                default -> "info";
+            };
+
+            // 尝试从描述文本中提取文件路径和行号
+            String fileName = null;
+            Integer line = null;
+            Matcher fileMatcher = filePathPattern.matcher(description);
+            if (fileMatcher.find()) {
+                fileName = fileMatcher.group(1);
+                if (fileMatcher.group(2) != null) {
+                    try { line = Integer.parseInt(fileMatcher.group(2)); } catch (NumberFormatException ignored) {}
+                }
+            }
+
+            // 如果描述为空，取下一行作为描述
+            if (description.isBlank()) {
+                int lineEnd = matcher.end();
+                int nextNewline = reviewText.indexOf('\n', lineEnd);
+                if (nextNewline >= 0 && nextNewline + 1 < reviewText.length()) {
+                    int afterNext = reviewText.indexOf('\n', nextNewline + 1);
+                    String nextLine = afterNext >= 0
+                            ? reviewText.substring(nextNewline + 1, afterNext).trim()
+                            : reviewText.substring(nextNewline + 1).trim();
+                    description = nextLine;
+                }
+            }
+
+            // 清理描述（去除 markdown 格式）
+            description = description.replaceAll("\\*\\*(.*?)\\*\\*", "$1")
+                    .replaceAll("`([^`]+)`", "$1")
+                    .trim();
+
+            if (!description.isEmpty()) {
+                issues.add(CodeReviewResult.CodeIssue.builder()
+                        .severity(severity)
+                        .fileName(fileName)
+                        .line(line)
+                        .message(description.length() > 300 ? description.substring(0, 300) + "..." : description)
+                        .build());
+            }
+        }
+
+        return issues;
+    }
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     /**
      * 从 Agent 返回的 Msg 中安全提取文本内容

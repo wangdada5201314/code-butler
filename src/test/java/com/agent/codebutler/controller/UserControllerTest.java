@@ -3,6 +3,8 @@ package com.agent.codebutler.controller;
 import com.agent.codebutler.aop.AuthInterceptor;
 import com.agent.codebutler.model.entity.User;
 import com.agent.codebutler.model.vo.LoginUserVO;
+import com.agent.codebutler.service.FavoriteRepoService;
+import com.agent.codebutler.service.UserPreferenceService;
 import com.agent.codebutler.service.UserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -33,6 +35,12 @@ class UserControllerTest {
 
     @MockBean
     private UserService userService;
+
+    @MockBean
+    private UserPreferenceService userPreferenceService;
+
+    @MockBean
+    private FavoriteRepoService favoriteRepoService;
 
     private static final String LOGIN_JSON = """
             {"userAccount":"testuser","userPassword":"12345678"}

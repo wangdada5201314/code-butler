@@ -14,6 +14,7 @@ import GeneralChatPanel from './components/GeneralChatPanel.jsx';
 import UsageDashboardPanel from './components/UsageDashboardPanel.jsx';
 import HistoryPanel from './components/HistoryPanel.jsx';
 import PreferencePanel from './components/PreferencePanel.jsx';
+import MemoryPanel from './components/MemoryPanel.jsx';
 import LoginModal from './components/LoginModal.jsx';
 import { checkHealth } from './api/client.js';
 
@@ -357,6 +358,7 @@ function AppInner() {
   const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [preferenceOpen, setPreferenceOpen] = useState(false);
+  const [memoryOpen, setMemoryOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('review');
   const [healthStatus, setHealthStatus] = useState('loading');
   const { loginUser, loading } = useLoginUser();
@@ -435,6 +437,7 @@ function AppInner() {
         onToggleTheme={() => setDarkMode((p) => !p)}
         onOpenHistory={() => setHistoryOpen(true)}
         onOpenPreference={() => setPreferenceOpen(true)}
+        onOpenMemory={() => setMemoryOpen(true)}
         healthStatus={healthStatus}
       />
 
@@ -447,6 +450,11 @@ function AppInner() {
       <PreferencePanel
         open={preferenceOpen}
         onClose={() => setPreferenceOpen(false)}
+      />
+      <MemoryPanel
+        darkMode={darkMode}
+        open={memoryOpen}
+        onClose={() => setMemoryOpen(false)}
       />
       <LoginModal
         open={loginModalOpen}

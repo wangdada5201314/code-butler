@@ -8,6 +8,7 @@ import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import HistoryIcon from '@mui/icons-material/History';
 import SettingsIcon from '@mui/icons-material/Settings';
+import MemoryIcon from '@mui/icons-material/Memory';
 import DarkModeIcon from '@mui/icons-material/DarkMode';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import LogoutIcon from '@mui/icons-material/Logout';
@@ -25,7 +26,7 @@ const NAV_ITEMS = [
   { key: 'usage',   label: '用量统计', icon: BarChartIcon, color: '#60a5fa', bg: 'rgba(96,165,250,0.12)' },
 ];
 
-export default function Sidebar({ activeTab, onTabChange, darkMode, onToggleTheme, onOpenHistory, onOpenPreference, healthStatus }) {
+export default function Sidebar({ activeTab, onTabChange, darkMode, onToggleTheme, onOpenHistory, onOpenPreference, onOpenMemory, healthStatus }) {
   const { loginUser, logout } = useLoginUser();
 
   return (
@@ -80,7 +81,7 @@ export default function Sidebar({ activeTab, onTabChange, darkMode, onToggleThem
             Code Butler
           </Typography>
           <Chip
-            label="v2.0"
+            label="v3.1"
             size="small"
             sx={{
               height: 18, fontSize: '0.58rem', fontWeight: 700, mt: 0.3,
@@ -250,6 +251,30 @@ export default function Sidebar({ activeTab, onTabChange, darkMode, onToggleThem
               whiteSpace: 'nowrap',
             }}>
               审查偏好
+            </Typography>
+          </Box>
+        </Tooltip>
+
+        {/* Memory */}
+        <Tooltip title="长期记忆" placement="right">
+          <Box
+            onClick={onOpenMemory}
+            sx={{
+              display: 'flex', alignItems: 'center', gap: 1.5,
+              px: { sm: '12px', md: '14px' }, py: '9px',
+              borderRadius: 'var(--radius-btn)',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              '&:hover': { bgcolor: darkMode ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' },
+            }}
+          >
+            <MemoryIcon sx={{ fontSize: 18, color: 'var(--text-muted)', flexShrink: 0 }} />
+            <Typography sx={{
+              display: { xs: 'none', md: 'block' },
+              fontSize: '0.82rem', color: 'var(--text-secondary)',
+              whiteSpace: 'nowrap',
+            }}>
+              长期记忆
             </Typography>
           </Box>
         </Tooltip>

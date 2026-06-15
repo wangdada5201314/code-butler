@@ -1,12 +1,15 @@
 package com.agent.codebutler.controller;
 
 import com.agent.codebutler.service.ChatService;
+import com.agent.codebutler.service.CodeKnowledgeService;
 import com.agent.codebutler.service.CodeReviewService;
 import com.agent.codebutler.service.DocGenerationService;
 import com.agent.codebutler.service.GeneralChatService;
 import com.agent.codebutler.service.OperationRecordService;
 import com.agent.codebutler.service.QuotaConfigService;
 import com.agent.codebutler.service.UsageService;
+import com.agent.codebutler.service.UserPreferenceService;
+import com.agent.codebutler.service.UserMemoryService;
 import com.agent.codebutler.service.UserService;
 import com.agent.codebutler.aop.AuthInterceptor;
 import com.agent.codebutler.aop.QuotaInterceptor;
@@ -63,6 +66,15 @@ class CodeButlerControllerTest {
 
     @MockBean
     private QuotaConfigService quotaConfigService;
+
+    @MockBean
+    private CodeKnowledgeService codeKnowledgeService;
+
+    @MockBean
+    private UserPreferenceService userPreferenceService;
+
+    @MockBean
+    private UserMemoryService userMemoryService;
 
     @BeforeEach
     void setUp() {

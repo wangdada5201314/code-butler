@@ -14,6 +14,7 @@ import com.agent.codebutler.model.enums.UserRoleEnum;
 import com.agent.codebutler.model.vo.OperationRecordVO;
 import com.agent.codebutler.model.vo.UsageStatsVO;
 import com.agent.codebutler.service.*;
+import com.agent.codebutler.model.vo.UserMemoryVO;
 import com.mybatisflex.core.paginate.Page;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -47,6 +48,8 @@ public class CodeButlerController {
     private final OperationRecordService operationRecordService;
     private final UsageService usageService;
     private final QuotaConfigService quotaConfigService;
+    private final CodeKnowledgeService codeKnowledgeService;
+    private final UserMemoryService userMemoryService;
 
     public CodeButlerController(CodeReviewService codeReviewService,
                                 DocGenerationService docGenerationService,
@@ -55,7 +58,9 @@ public class CodeButlerController {
                                 UserService userService,
                                 OperationRecordService operationRecordService,
                                 UsageService usageService,
-                                QuotaConfigService quotaConfigService) {
+                                QuotaConfigService quotaConfigService,
+                                CodeKnowledgeService codeKnowledgeService,
+                                UserMemoryService userMemoryService) {
         this.codeReviewService = codeReviewService;
         this.docGenerationService = docGenerationService;
         this.chatService = chatService;
@@ -64,6 +69,8 @@ public class CodeButlerController {
         this.operationRecordService = operationRecordService;
         this.usageService = usageService;
         this.quotaConfigService = quotaConfigService;
+        this.codeKnowledgeService = codeKnowledgeService;
+        this.userMemoryService = userMemoryService;
     }
 
     @PostMapping("/review")
@@ -97,7 +104,14 @@ public class CodeButlerController {
                     ServerSentEvent.<String>builder().event("done").data("[DONE]").build());
         }
         Long userId = userService.getLoginUserIdOrNull(request);
-        return codeReviewService.streamReview(repoPath, userId);
+        try {
+            return codeReviewService.streamReview(repoPath, userId);
+        } catch (Exception e) {
+            log.error("流式审查启动失败: repoPath={}", repoPath, e);
+            return Flux.just(
+                    ServerSentEvent.<String>builder().event("error").data("[ERROR] " + e.getMessage()).build(),
+                    ServerSentEvent.<String>builder().event("done").data("[DONE]").build());
+        }
     }
 
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -185,6 +199,44 @@ public class CodeButlerController {
     }
 
     // ════════════════════════════════════════════════════════
+    //  RAG 代码知识库
+    // ════════════════════════════════════════════════════════
+
+    @PostMapping("/knowledge/index")
+    @AuthCheck(mustRole = "user")
+    @Operation(summary = "索引代码仓库", description = "将仓库代码分块并向量化存入知识库，用于 RAG 语义检索")
+    public ApiResponse<CodeKnowledgeService.IndexResult> indexRepository(
+            @RequestParam @NotBlank(message = "仓库路径不能为空")
+            @Parameter(description = "仓库本地路径") String repoPath,
+            HttpServletRequest request) {
+        // 知识索引目前仅支持本地路径，不支持 GitHub URL
+        if (repoPath.startsWith("http://") || repoPath.startsWith("https://")) {
+            return ApiResponse.error(400, "代码知识库索引仅支持本地仓库路径，不支持 GitHub URL。请先将仓库 clone 到本地后再索引。");
+        }
+        try {
+            CodeKnowledgeService.IndexResult result = codeKnowledgeService.indexRepository(repoPath);
+            return ApiResponse.success(result);
+        } catch (Exception e) {
+            log.error("代码知识库索引失败: repoPath={}", repoPath, e);
+            return ApiResponse.error(500, "索引失败: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/knowledge/status")
+    @AuthCheck(mustRole = "user")
+    @Operation(summary = "查询索引状态", description = "查询仓库的代码知识库索引状态")
+    public ApiResponse<CodeKnowledgeService.IndexStatus> getKnowledgeStatus(
+            @RequestParam @NotBlank(message = "仓库路径不能为空")
+            @Parameter(description = "仓库本地路径") String repoPath,
+            HttpServletRequest request) {
+        if (repoPath.startsWith("http://") || repoPath.startsWith("https://")) {
+            return ApiResponse.error(400, "代码知识库仅支持本地仓库路径");
+        }
+        CodeKnowledgeService.IndexStatus status = codeKnowledgeService.getIndexStatus(repoPath);
+        return ApiResponse.success(status);
+    }
+
+    // ════════════════════════════════════════════════════════
     //  用量统计
     // ════════════════════════════════════════════════════════
 
@@ -219,5 +271,84 @@ public class CodeButlerController {
     public ApiResponse<Boolean> updateQuotaConfig(@Valid @RequestBody QuotaConfigUpdateRequest request) {
         quotaConfigService.updateDailyLimit(request.getOpType(), request.getDailyLimit());
         return ApiResponse.success(true);
+    }
+
+    // ════════════════════════════════════════════════════════
+    //  长期记忆管理
+    // ════════════════════════════════════════════════════════
+
+    @GetMapping("/memory")
+    @AuthCheck(mustRole = "user")
+    @Operation(summary = "记忆列表", description = "获取当前用户的所有长期记忆")
+    public ApiResponse<List<UserMemoryVO>> listMemories(
+            @RequestParam(required = false) @Parameter(description = "按类型筛选") String memoryType,
+            HttpServletRequest request) {
+        Long userId = userService.getLoginUserIdOrNull(request);
+        if (userId == null) return ApiResponse.error(40100, "请先登录");
+        List<UserMemoryVO> voList = userMemoryService.listByUser(userId, memoryType).stream()
+                .map(e -> UserMemoryVO.builder()
+                        .id(e.getId())
+                        .memoryType(e.getMemoryType())
+                        .content(e.getContent())
+                        .summary(e.getSummary())
+                        .metadata(e.getMetadata())
+                        .ttlDays(e.getTtlDays())
+                        .createTime(e.getCreateTime())
+                        .updateTime(e.getUpdateTime())
+                        .build())
+                .toList();
+        return ApiResponse.success(voList);
+    }
+
+    @PostMapping("/memory/search")
+    @AuthCheck(mustRole = "user")
+    @Operation(summary = "搜索记忆", description = "语义搜索当前用户的长期记忆")
+    public ApiResponse<List<java.util.Map<String, Object>>> searchMemories(
+            @RequestBody java.util.Map<String, Object> body,
+            HttpServletRequest request) {
+        Long userId = userService.getLoginUserIdOrNull(request);
+        if (userId == null) return ApiResponse.error(40100, "请先登录");
+        String query = (String) body.get("query");
+        int limit = body.containsKey("limit") ? ((Number) body.get("limit")).intValue() : 5;
+        if (query == null || query.isBlank()) return ApiResponse.error(40000, "查询内容不能为空");
+        List<java.util.Map<String, Object>> results = userMemoryService.search(userId, query, limit).stream()
+                .map(r -> {
+                    java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
+                    map.put("id", r.id());
+                    map.put("memoryType", r.memoryType());
+                    map.put("content", r.content());
+                    map.put("summary", r.summary());
+                    map.put("score", r.score());
+                    return map;
+                })
+                .toList();
+        return ApiResponse.success(results);
+    }
+
+    @DeleteMapping("/memory/{id}")
+    @AuthCheck(mustRole = "user")
+    @Operation(summary = "删除记忆", description = "删除指定 ID 的长期记忆")
+    public ApiResponse<Boolean> deleteMemory(
+            @PathVariable Long id,
+            HttpServletRequest request) {
+        Long userId = userService.getLoginUserIdOrNull(request);
+        if (userId == null) return ApiResponse.error(40100, "请先登录");
+        boolean ok = userMemoryService.delete(id, userId);
+        return ok ? ApiResponse.success(true) : ApiResponse.error(40000, "记忆不存在或无权限");
+    }
+
+    @PutMapping("/memory/{id}")
+    @AuthCheck(mustRole = "user")
+    @Operation(summary = "更新记忆", description = "更新指定记忆的内容")
+    public ApiResponse<Boolean> updateMemory(
+            @PathVariable Long id,
+            @RequestBody java.util.Map<String, String> body,
+            HttpServletRequest request) {
+        Long userId = userService.getLoginUserIdOrNull(request);
+        if (userId == null) return ApiResponse.error(40100, "请先登录");
+        String content = body.get("content");
+        if (content == null || content.isBlank()) return ApiResponse.error(40000, "内容不能为空");
+        boolean ok = userMemoryService.update(id, userId, content);
+        return ok ? ApiResponse.success(true) : ApiResponse.error(40000, "记忆不存在或无权限");
     }
 }

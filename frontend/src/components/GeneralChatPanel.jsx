@@ -10,7 +10,10 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import CheckIcon from '@mui/icons-material/Check';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import MapIcon from '@mui/icons-material/Map';
+import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import { useSSE } from '../hooks/useSSE.js';
+import AgentTimeline from './AgentTimeline.jsx';
 
 /* ─── Quick Prompts ─── */
 const QUICK_PROMPTS = [
@@ -161,6 +164,7 @@ function MarkdownContent({ text }) {
    ======================================================== */
 export default function GeneralChatPanel({ darkMode }) {
   const [input, setInput] = useState('');
+  const [planMode, setPlanMode] = useState(false);
   const [history, setHistory] = useState([]);
   const [inputError, setInputError] = useState(null);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
@@ -175,9 +179,19 @@ export default function GeneralChatPanel({ darkMode }) {
     isConnected,
     isLoading: streamLoading,
     error: streamError,
+    traceEvents,
     startStream,
     stopStream,
   } = useSSE();
+
+  const [timelineOpen, setTimelineOpen] = useState(false);
+
+  // Auto-open timeline when first trace event arrives
+  useEffect(() => {
+    if (traceEvents.length > 0 && !timelineOpen) {
+      setTimelineOpen(true);
+    }
+  }, [traceEvents.length]);
 
   const scrollToBottom = useCallback((smooth = true) => {
     messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
@@ -208,7 +222,7 @@ export default function GeneralChatPanel({ darkMode }) {
     if (!msg) { setInputError('请输入您的问题'); return; }
     setInputError(null);
     setHistory((prev) => [...prev, { role: 'user', content: msg, timestamp: Date.now() }]);
-    startStream(msg, null, GENERAL_CHAT_ENDPOINT);
+    startStream(msg, null, GENERAL_CHAT_ENDPOINT, planMode);
     setInput('');
   }, [input, startStream]);
 
@@ -235,7 +249,7 @@ export default function GeneralChatPanel({ darkMode }) {
     if (isConnected || streamLoading) return;
     const lastUserMsg = [...history].reverse().find(m => m.role === 'user');
     if (lastUserMsg) {
-      startStream(lastUserMsg.content, null, GENERAL_CHAT_ENDPOINT);
+      startStream(lastUserMsg.content, null, GENERAL_CHAT_ENDPOINT, planMode);
     }
   }, [isConnected, streamLoading, history, startStream]);
 
@@ -456,6 +470,15 @@ export default function GeneralChatPanel({ darkMode }) {
           </Fade>
         )}
 
+        {/* Agent execution timeline */}
+        {traceEvents.length > 0 && (
+          <AgentTimeline
+            traceEvents={traceEvents}
+            collapsed={!timelineOpen}
+            onToggle={() => setTimelineOpen((prev) => !prev)}
+          />
+        )}
+
         <div ref={messagesEndRef} />
       </Box>
 
@@ -491,6 +514,83 @@ export default function GeneralChatPanel({ darkMode }) {
             <Typography sx={{ fontSize: '0.8rem' }}>{inputError}</Typography>
           </Alert>
         )}
+
+        {/* ── Plan Mode Toggle (compact) ── */}
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+          <Box sx={{ display: 'flex', gap: 0 }}>
+            {/* 快速模式 */}
+            <Box
+              onClick={() => !isStreaming && setPlanMode(false)}
+              sx={{
+                display: 'flex', alignItems: 'center', gap: 0.5,
+                px: 1.2, py: 0.35,
+                borderTopLeftRadius: 'var(--radius-btn)',
+                borderBottomLeftRadius: 'var(--radius-btn)',
+                border: '1px solid var(--border-subtle)',
+                borderRight: 'none',
+                bgcolor: !planMode ? 'rgba(45,212,191,0.1)' : 'transparent',
+                cursor: isStreaming ? 'default' : 'pointer',
+                opacity: isStreaming ? 0.5 : 1,
+                transition: 'all 0.2s',
+                '&:hover': !isStreaming && planMode ? { bgcolor: 'rgba(45,212,191,0.05)' } : {},
+              }}
+            >
+              <RocketLaunchIcon sx={{
+                fontSize: 13,
+                color: !planMode ? 'var(--accent-secondary)' : 'var(--text-muted)',
+              }} />
+              <Typography sx={{
+                fontSize: '0.7rem', fontWeight: !planMode ? 700 : 500,
+                color: !planMode ? 'var(--accent-secondary)' : 'var(--text-muted)',
+                fontFamily: 'var(--font-body)',
+              }}>
+                快速
+              </Typography>
+            </Box>
+            {/* 规划模式 */}
+            <Box
+              onClick={() => !isStreaming && setPlanMode(true)}
+              sx={{
+                display: 'flex', alignItems: 'center', gap: 0.5,
+                px: 1.2, py: 0.35,
+                borderTopRightRadius: 'var(--radius-btn)',
+                borderBottomRightRadius: 'var(--radius-btn)',
+                border: '1px solid var(--border-subtle)',
+                bgcolor: planMode ? 'rgba(212,160,83,0.1)' : 'transparent',
+                cursor: isStreaming ? 'default' : 'pointer',
+                opacity: isStreaming ? 0.5 : 1,
+                transition: 'all 0.2s',
+                '&:hover': !isStreaming && !planMode ? { bgcolor: 'rgba(212,160,83,0.05)' } : {},
+              }}
+            >
+              <MapIcon sx={{
+                fontSize: 13,
+                color: planMode ? 'var(--accent)' : 'var(--text-muted)',
+              }} />
+              <Typography sx={{
+                fontSize: '0.7rem', fontWeight: planMode ? 700 : 500,
+                color: planMode ? 'var(--accent)' : 'var(--text-muted)',
+                fontFamily: 'var(--font-body)',
+              }}>
+                规划
+              </Typography>
+            </Box>
+          </Box>
+          {planMode && (
+            <Chip
+              label="规划模式"
+              size="small"
+              icon={<MapIcon sx={{ fontSize: 11 }} />}
+              sx={{
+                height: 22, fontSize: '0.65rem',
+                bgcolor: 'rgba(212,160,83,0.1)',
+                color: 'var(--accent)',
+                fontWeight: 600,
+                border: '1px solid rgba(212,160,83,0.2)',
+              }}
+            />
+          )}
+        </Box>
 
         <Box sx={{
           display: 'flex', alignItems: 'flex-end', gap: 1.2,

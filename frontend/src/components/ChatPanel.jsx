@@ -11,8 +11,11 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import CheckIcon from '@mui/icons-material/Check';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import MapIcon from '@mui/icons-material/Map';
+import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import { useSSE } from '../hooks/useSSE.js';
 import FavoriteReposBar from './FavoriteReposBar.jsx';
+import AgentTimeline from './AgentTimeline.jsx';
 
 /* ─── Quick Prompts ─── */
 const QUICK_PROMPTS = [
@@ -160,6 +163,7 @@ function MarkdownContent({ text, darkMode }) {
 export default function ChatPanel({ darkMode }) {
   const [repoPath, setRepoPath] = useState('');
   const [question, setQuestion] = useState('');
+  const [planMode, setPlanMode] = useState(false);
   const [history, setHistory] = useState([]);
   const [inputError, setInputError] = useState(null);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
@@ -173,9 +177,19 @@ export default function ChatPanel({ darkMode }) {
     isConnected,
     isLoading: streamLoading,
     error: streamError,
+    traceEvents,
     startStream,
     stopStream,
   } = useSSE();
+
+  const [timelineOpen, setTimelineOpen] = useState(false);
+
+  // Auto-open timeline when first trace event arrives
+  useEffect(() => {
+    if (traceEvents.length > 0 && !timelineOpen) {
+      setTimelineOpen(true);
+    }
+  }, [traceEvents.length]);
 
   const scrollToBottom = useCallback((smooth = true) => {
     messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
@@ -202,7 +216,7 @@ export default function ChatPanel({ darkMode }) {
     if (!msg) { setInputError('请输入您的问题'); return; }
     setInputError(null);
     setHistory((prev) => [...prev, { role: 'user', content: msg, timestamp: Date.now() }]);
-    startStream(msg, repoPath.trim());
+    startStream(msg, repoPath.trim(), undefined, planMode);
     setQuestion('');
   }, [repoPath, question, startStream]);
 
@@ -229,7 +243,7 @@ export default function ChatPanel({ darkMode }) {
     if (isConnected || streamLoading) return;
     const lastUserMsg = [...history].reverse().find(m => m.role === 'user');
     if (lastUserMsg) {
-      startStream(lastUserMsg.content, repoPath.trim());
+      startStream(lastUserMsg.content, repoPath.trim(), undefined, planMode);
     }
   }, [isConnected, streamLoading, history, repoPath, startStream]);
 
@@ -255,6 +269,69 @@ export default function ChatPanel({ darkMode }) {
             <PsychologyIcon sx={{ color: 'var(--accent-secondary)', fontSize: 18 }} />
           </Box>
           <Typography className="section-title">智能问答</Typography>
+
+          {/* ── Plan Mode Toggle ── */}
+          <Box sx={{ ml: 'auto', display: 'flex', gap: 0 }}>
+            {/* 快速模式 */}
+            <Box
+              onClick={() => !isStreaming && setPlanMode(false)}
+              sx={{
+                display: 'flex', alignItems: 'center', gap: 0.5,
+                px: 1.5, py: 0.5,
+                borderTopLeftRadius: 'var(--radius-btn)',
+                borderBottomLeftRadius: 'var(--radius-btn)',
+                border: '1px solid var(--border-subtle)',
+                borderRight: 'none',
+                bgcolor: !planMode ? 'rgba(45,212,191,0.12)' : 'transparent',
+                cursor: isStreaming ? 'default' : 'pointer',
+                opacity: isStreaming ? 0.5 : 1,
+                transition: 'all 0.2s',
+                '&:hover': !isStreaming && planMode ? { bgcolor: 'rgba(45,212,191,0.06)' } : {},
+              }}
+            >
+              <RocketLaunchIcon sx={{
+                fontSize: 14,
+                color: !planMode ? 'var(--accent-secondary)' : 'var(--text-muted)',
+              }} />
+              <Typography sx={{
+                fontSize: '0.72rem', fontWeight: !planMode ? 700 : 500,
+                color: !planMode ? 'var(--accent-secondary)' : 'var(--text-muted)',
+                fontFamily: 'var(--font-body)', whiteSpace: 'nowrap',
+              }}>
+                快速
+              </Typography>
+            </Box>
+            {/* 规划模式 */}
+            <Box
+              onClick={() => !isStreaming && setPlanMode(true)}
+              sx={{
+                display: 'flex', alignItems: 'center', gap: 0.5,
+                px: 1.5, py: 0.5,
+                borderTopRightRadius: 'var(--radius-btn)',
+                borderBottomRightRadius: 'var(--radius-btn)',
+                border: '1px solid var(--border-subtle)',
+                bgcolor: planMode ? 'rgba(212,160,83,0.12)' : 'transparent',
+                cursor: isStreaming ? 'default' : 'pointer',
+                opacity: isStreaming ? 0.5 : 1,
+                transition: 'all 0.2s',
+                position: 'relative',
+                '&:hover': !isStreaming && !planMode ? { bgcolor: 'rgba(212,160,83,0.06)' } : {},
+              }}
+            >
+              <MapIcon sx={{
+                fontSize: 14,
+                color: planMode ? 'var(--accent)' : 'var(--text-muted)',
+              }} />
+              <Typography sx={{
+                fontSize: '0.72rem', fontWeight: planMode ? 700 : 500,
+                color: planMode ? 'var(--accent)' : 'var(--text-muted)',
+                fontFamily: 'var(--font-body)', whiteSpace: 'nowrap',
+              }}>
+                规划
+              </Typography>
+            </Box>
+          </Box>
+
           {isStreaming && (
             <Chip
               label="回答中"
@@ -273,6 +350,21 @@ export default function ChatPanel({ darkMode }) {
                   <Box component="span" className="dot" />
                 </Box>
               }
+            />
+          )}
+
+          {/* Plan Mode indicator banner */}
+          {planMode && (
+            <Chip
+              label="规划模式"
+              size="small"
+              icon={<MapIcon sx={{ fontSize: 12 }} />}
+              sx={{
+                bgcolor: 'rgba(212,160,83,0.1)',
+                color: 'var(--accent)',
+                fontWeight: 600, fontSize: '0.68rem',
+                border: '1px solid rgba(212,160,83,0.25)',
+              }}
             />
           )}
         </Box>
@@ -512,6 +604,15 @@ export default function ChatPanel({ darkMode }) {
                   思考中...
                 </Typography>
               </Box>
+            )}
+
+            {/* Agent execution timeline */}
+            {traceEvents.length > 0 && (
+              <AgentTimeline
+                traceEvents={traceEvents}
+                collapsed={!timelineOpen}
+                onToggle={() => setTimelineOpen((prev) => !prev)}
+              />
             )}
 
             <div ref={messagesEndRef} />

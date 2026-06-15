@@ -5,9 +5,10 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ReasoningInput;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -15,6 +16,7 @@ import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -40,12 +42,45 @@ public class CodingStandardsMiddleware implements MiddlewareBase {
     /** 编码规范规则（可后续改为从数据库/配置文件读取） */
     private final String codingStandards;
 
+    /** Micrometer 指标注册表 */
+    private final MeterRegistry meterRegistry;
+
+    /** 推理耗时 Timer */
+    private final Timer reasoningTimer;
+
+    /** 工具调用次数 Counter（按 toolName 区分 tag） */
+    private final Counter toolCallTotal;
+
+    /** 工具调用错误 Counter */
+    private final Counter toolCallErrors;
+
     public CodingStandardsMiddleware() {
-        this.codingStandards = buildDefaultStandards();
+        this(null, null);
     }
 
     public CodingStandardsMiddleware(String customStandards) {
-        this.codingStandards = customStandards;
+        this(customStandards, null);
+    }
+
+    public CodingStandardsMiddleware(String customStandards, MeterRegistry meterRegistry) {
+        this.codingStandards = customStandards != null ? customStandards : buildDefaultStandards();
+        this.meterRegistry = meterRegistry;
+        // 预创建常用指标（避免每次调用时查找）
+        this.reasoningTimer = meterRegistry != null
+                ? Timer.builder("agent.reasoning.duration")
+                    .description("Agent 每轮推理耗时")
+                    .register(meterRegistry)
+                : null;
+        this.toolCallTotal = meterRegistry != null
+                ? Counter.builder("agent.tool.calls")
+                    .description("工具调用总次数")
+                    .register(meterRegistry)
+                : null;
+        this.toolCallErrors = meterRegistry != null
+                ? Counter.builder("agent.tool.errors")
+                    .description("工具调用失败次数")
+                    .register(meterRegistry)
+                : null;
     }
 
     // ════════════════════════════════════════════════════════
@@ -76,11 +111,18 @@ public class CodingStandardsMiddleware implements MiddlewareBase {
             Duration elapsed = Duration.between(start, Instant.now());
             reasoningTimers.remove(sessionId);
             log.info("[Middleware] 推理完成: session={}, elapsed={}ms", sessionId, elapsed.toMillis());
+            // 记录 Micrometer 指标
+            if (reasoningTimer != null) {
+                reasoningTimer.record(elapsed);
+            }
         }).doOnError(e -> {
             Duration elapsed = Duration.between(start, Instant.now());
             reasoningTimers.remove(sessionId);
             log.warn("[Middleware] 推理异常: session={}, elapsed={}ms, error={}",
                     sessionId, elapsed.toMillis(), e.getMessage());
+            if (reasoningTimer != null) {
+                reasoningTimer.record(elapsed);
+            }
         });
     }
 
@@ -91,14 +133,20 @@ public class CodingStandardsMiddleware implements MiddlewareBase {
     public Flux<AgentEvent> onActing(Agent agent, ActingInput input,
                                       Function<ActingInput, Flux<AgentEvent>> next) {
         List<?> toolCalls = input.toolCalls();
+        List<String> toolNames = new ArrayList<>();
         if (toolCalls != null && !toolCalls.isEmpty()) {
             for (Object tc : toolCalls) {
                 if (tc instanceof ToolUseBlock block) {
                     String toolName = block.getName();
+                    toolNames.add(toolName);
                     Map<String, Object> args = block.getInput();
                     // 参数摘要：只记录 key 列表，不记录完整值（避免日志过大）
                     String argKeys = args != null ? String.join(", ", args.keySet()) : "none";
                     log.info("[Middleware] 工具调用: name={}, args=[{}]", toolName, argKeys);
+                    // 递增工具调用计数器
+                    if (toolCallTotal != null) {
+                        toolCallTotal.increment();
+                    }
                 }
             }
         }
@@ -108,6 +156,22 @@ public class CodingStandardsMiddleware implements MiddlewareBase {
             Duration elapsed = Duration.between(start, Instant.now());
             log.info("[Middleware] 工具执行完成: count={}, elapsed={}ms",
                     toolCalls != null ? toolCalls.size() : 0, elapsed.toMillis());
+            // 按工具名记录耗时 Timer
+            if (meterRegistry != null) {
+                for (String name : toolNames) {
+                    Timer.builder("agent.tool.duration")
+                            .tag("toolName", name)
+                            .description("工具执行耗时")
+                            .register(meterRegistry)
+                            .record(elapsed);
+                }
+            }
+        }).doOnError(e -> {
+            // 工具调用失败计数
+            if (toolCallErrors != null) {
+                toolCallErrors.increment();
+            }
+            log.warn("[Middleware] 工具执行异常: error={}", e.getMessage());
         });
     }
 

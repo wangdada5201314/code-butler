@@ -13,7 +13,7 @@
 
     <groupId>com.agent</groupId>
     <artifactId>code-butler</artifactId>
-    <version>3.1.0</version>
+    <version>4.0.0</version>
     <name>Code Butler</name>
     <description>代码仓库智能管家 - 基于 AgentScope 2.0 + Spring Boot 的 AI 代码助手</description>
 
@@ -70,6 +70,12 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- Micrometer Prometheus Registry（指标导出到 /actuator/prometheus） -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
 
         <!-- AgentScope 2.0 Harness（完整工程能力） -->

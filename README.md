@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-3.1.0-blue?style=flat-square" alt="v3.1.0" />
+  <img src="https://img.shields.io/badge/version-4.0.0-blue?style=flat-square" alt="v4.0.0" />
   <img src="https://img.shields.io/badge/Java-21-orange?style=flat-square&logo=openjdk" alt="Java 21" />
   <img src="https://img.shields.io/badge/Spring%20Boot-3.3.5-6DB33F?style=flat-square&logo=springboot" alt="Spring Boot 3.3" />
   <img src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React 18" />
@@ -57,28 +57,38 @@
 
 ## 架构总览
 
+> 完整架构图见 [docs/architecture.mmd](docs/architecture.mmd)（Mermaid 格式，可用 VS Code 插件或 [mermaid.live](https://mermaid.live) 查看）
+
 ```
-┌───────────────────────────────────────────────────────────────┐
-│                       Frontend (React 18)                      │
-│    Vite + MUI 5 + Tailwind CSS + SSE + Sidebar Navigation     │
-│    侧边栏导航 · 用户偏好配置 · 收藏仓库 · 操作历史            │
-│                      Port: 5200 (dev)                         │
-├───────────────────────────────────────────────────────────────┤
-│                    Backend (Spring Boot 3.3.5)                 │
-│     Controller → Service → AgentScope Harness Agent           │
-│                  ↘ Middleware: 编码规范注入 + 可观测性追踪     │
-│                  ↘ Toolkit: 代码搜索/复杂度/坏味道 @Tool      │
-│                  ↘ Plan Mode: 复杂任务分步规划                │
-│                  ↘ OperationRecordService (异步记录)           │
-│                  ↘ UserPreferenceService (偏好融入 prompt)     │
-│                      Port: 8080                               │
-├─────────────────────────┬─────────────────────────────────────┤
-│    AgentScope 2.0       │      Infrastructure (Docker)        │
-│    DeepSeek/Qwen/GLM    │      MySQL 8.0  +  Redis 7          │
-│    MCP (GitHub) + @Tool │      user + operation_record 表     │
-│    用户级记忆绑定        │      user_preference + favorite_repo│
-│    Plan Mode + Middleware│      quota_config                   │
-└─────────────────────────┴─────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                       Frontend (React 18 + Vite)                     │
+│   MUI 5 + Tailwind CSS + useSSE Hook + AgentTimeline 可视化          │
+│   侧边栏导航 · 5 面板视图 · 暗色/亮色主题 · Agent 执行追踪面板        │
+├─────────────────────────────────────────────────────────────────────┤
+│                       REST API (Spring Boot 3.3.5)                   │
+│   Controller → Service → AgentScope HarnessAgent                     │
+├─────────────────────────────────────────────────────────────────────┤
+│                       AgentScope 2.0 Agent Core                      │
+│                                                                      │
+│   ┌─ Middleware 链 ──────────────┐  ┌─ @Tool 工具集 ─────────────┐  │
+│   │ CodingStandardsMiddleware    │  │ CodeAnalysisTools (×4)     │  │
+│   │  · 编码规范注入              │  │ KnowledgeRetrievalTool     │  │
+│   │  · Micrometer 指标采集       │  │  · RAG 索引 + 语义检索     │  │
+│   │                              │  │ MemoryTools                │  │
+│   │ AgentTraceMiddleware         │  │  · 长期记忆读写             │  │
+│   │  · 推理/工具/子Agent 追踪    │  └────────────────────────────┘  │
+│   │  · SSE trace 事件推送        │                                   │
+│   └──────────────────────────────┘  ┌─ 专家子 Agent ─────────────┐  │
+│                                      │ SecurityAgent (安全)        │  │
+│                                      │ PerformanceAgent (性能)     │  │
+│   Plan Mode · 对话压缩 · MCP         │ ArchitectureAgent (架构)    │  │
+│                                      └────────────────────────────┘  │
+├──────────────────────────┬──────────────────────────────────────────┤
+│   Infrastructure         │   Observability                          │
+│   MySQL 8.0 + Redis 7    │   Micrometer → Prometheus               │
+│   Session · 配额 · 记忆   │   /actuator/prometheus                  │
+│   知识向量 · 操作记录      │   推理/工具调用 耗时 + 计数              │
+└──────────────────────────┴──────────────────────────────────────────┘
 ```
 
 ## 技术栈

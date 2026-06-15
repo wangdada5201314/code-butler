@@ -20,4 +20,9 @@ public class CodeChatRequest {
     private String repoPath;
 
     private String sessionId;
+
+    /**
+     * Plan Mode：开启后 Agent 会先制定分步计划，再逐步执行
+     */
+    private Boolean planMode = false;
 }

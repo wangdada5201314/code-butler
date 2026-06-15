@@ -1,7 +1,12 @@
 package com.agent.codebutler.config;
 
+import com.agent.codebutler.middleware.AgentTraceMiddleware;
 import com.agent.codebutler.middleware.CodingStandardsMiddleware;
+import com.agent.codebutler.service.CodeKnowledgeService;
+import com.agent.codebutler.service.UserMemoryService;
 import com.agent.codebutler.tools.CodeAnalysisTools;
+import com.agent.codebutler.tools.KnowledgeRetrievalTool;
+import com.agent.codebutler.tools.MemoryTools;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.OpenAIChatModel;
@@ -10,6 +15,8 @@ import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import io.agentscope.harness.agent.subagent.SubagentDeclaration;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -47,6 +54,9 @@ public class AgentConfig {
     @Value("${agentscope.max-iters:25}")
     private int maxIters;
 
+    @Value("${agentscope.state.cleanup-on-start:false}")
+    private boolean cleanupOnStart;
+
     // ---- API Key 配置（可从 yml 读取） ----
 
     @Value("${dashscope.api-key:#{null}}")
@@ -61,17 +71,39 @@ public class AgentConfig {
     @Value("${github.token:}")
     private String githubToken;
 
+    private final CodeKnowledgeService codeKnowledgeService;
+    private final UserMemoryService userMemoryService;
+    private final MeterRegistry meterRegistry;
+
+    public AgentConfig(CodeKnowledgeService codeKnowledgeService,
+                       UserMemoryService userMemoryService,
+                       MeterRegistry meterRegistry) {
+        this.codeKnowledgeService = codeKnowledgeService;
+        this.userMemoryService = userMemoryService;
+        this.meterRegistry = meterRegistry;
+    }
+
+    /**
+     * 暴露 MemoryTools 为 Bean，供 Service 层在每次请求前设置 userId
+     */
+    @Bean
+    public MemoryTools memoryTools() {
+        return new MemoryTools(userMemoryService);
+    }
+
+    /**
+     * 暴露 AgentTraceMiddleware 为 Bean，供 Service 层在每次请求前设置追踪回调
+     */
+    @Bean
+    public AgentTraceMiddleware agentTraceMiddleware() {
+        return new AgentTraceMiddleware();
+    }
+
     /**
      * 清理 Agent 持久化状态文件。
-     * <p>
-     * AgentScope 会将 Agent 状态（包括权限模式）序列化到 agent_state.json。
-     * 当 Builder 中的权限设置更新后（如从 DEFAULT 改为 BYPASS），旧的状态文件
-     * 会覆盖 Builder 设置，导致权限模式不生效。
-     * 每次启动时清理状态文件，确保使用 Builder 中的最新配置。
      */
     private void cleanAgentState(Path workspaceDir) {
         try {
-            // AgentScope 状态路径: {workspace}/agents/{agentName}/context/{agentName}/agent_state.json
             Path stateFile = workspaceDir
                     .resolve("agents").resolve("code-butler")
                     .resolve("context").resolve("code-butler")
@@ -86,23 +118,49 @@ public class AgentConfig {
     }
 
     @Bean
-    public HarnessAgent codeButlerAgent() {
-        // 从 yml 读取的 Key 注册模型，这样不依赖环境变量
+    public HarnessAgent codeButlerAgent(MemoryTools memoryTools, AgentTraceMiddleware agentTraceMiddleware) {
         preRegisterModels();
 
         Path workspaceDir = Paths.get(workspacePath);
-
-        // 清理旧状态文件，防止持久化的权限模式覆盖 Builder 设置
-        cleanAgentState(workspaceDir);
-
-        // 确保 workspace 目录和 MCP tools.json 存在
+        if (cleanupOnStart) {
+            cleanAgentState(workspaceDir);
+        } else {
+            log.info("Agent 状态持久化已启用（设置 agentscope.state.cleanup-on-start=true 可在启动时清理）");
+        }
         ensureWorkspaceToolsConfig(workspaceDir);
 
-        // 注册自定义代码分析工具（Agent 可在推理中自主调用）
+        // 注册自定义代码分析工具 + RAG 知识检索工具 + 长期记忆工具
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new CodeAnalysisTools());
+        toolkit.registerTool(new KnowledgeRetrievalTool(codeKnowledgeService));
+        toolkit.registerTool(memoryTools);
 
-        HarnessAgent agent = HarnessAgent.builder()
+        // ── 定义子 Agent（专家） ──
+        SubagentDeclaration securityAgent = SubagentDeclaration.builder()
+                .name("SecurityAgent")
+                .description("安全审查专家。专注检测安全漏洞：SQL 注入、XSS、路径穿越、硬编码密钥、"
+                        + "不安全的加密算法、CVE 已知漏洞。审查完成后输出按严重程度排序的漏洞清单。")
+                .model(defaultModel)
+                .maxIters(12)
+                .build();
+
+        SubagentDeclaration performanceAgent = SubagentDeclaration.builder()
+                .name("PerformanceAgent")
+                .description("性能分析专家。专注识别性能瓶颈：N+1 查询、内存泄漏风险、"
+                        + "不必要的对象创建、O(n²) 算法、IO 阻塞、锁竞争。输出优化建议和预估收益。")
+                .model(defaultModel)
+                .maxIters(10)
+                .build();
+
+        SubagentDeclaration architectureAgent = SubagentDeclaration.builder()
+                .name("ArchitectureAgent")
+                .description("架构评审专家。从设计模式、SOLID 原则、模块耦合度、分层合规性、"
+                        + "可扩展性角度审查代码架构。识别反模式并给出重构路线图。")
+                .model(defaultModel)
+                .maxIters(15)
+                .build();
+
+        HarnessAgent.Builder builder = HarnessAgent.builder()
                 .name("code-butler")
                 .sysPrompt("""
                         你是一个专业的代码仓库智能管家（Code Butler），具备以下能力：
@@ -113,41 +171,60 @@ public class AgentConfig {
                         4. **技术决策**：对比多种实现方案，给出推荐
                         5. **GitHub 远程仓库**：可通过 MCP 工具读取 GitHub 仓库的文件、提交历史和 PR
                         6. **代码分析工具**：可使用 search_code_files、count_code_lines、calculate_complexity、detect_code_smells 工具深入分析代码
+                        7. **RAG 代码知识库**：使用 index_code_knowledge 索引仓库，使用 search_code_knowledge 进行语义检索
+                        8. **长期记忆**：使用 record_to_memory 记住用户偏好和项目事实，使用 retrieve_from_memory 在对话开始时检索历史上下文
+
+                        ## 子 Agent 调度
+
+                        你有一个专家团队可以调度，通过 spawn_subagent 创建子 Agent：
+
+                        - **SecurityAgent**：安全审查专家（SQL 注入/XSS/路径穿越/CVE）
+                        - **PerformanceAgent**：性能分析专家（N+1 查询/内存泄漏/算法复杂度）
+                        - **ArchitectureAgent**：架构评审专家（SOLID/设计模式/耦合度）
+
+                        审查流程：
+                        1. 先使用 search_code_files 和 index_code_knowledge 了解仓库结构
+                        2. 根据任务类型，spawn 对应的专家子 Agent 进行专项分析
+                        3. 汇总各专家的报告，形成最终审查结论
 
                         工作原则：
                         - 先理解代码全貌，再给出建议
-                        - 对于 GitHub 仓库，使用 MCP 工具列出目录结构、读取关键文件，至少浏览 5-8 个重要源文件
-                        - 对于本地仓库，主动使用代码分析工具（复杂度计算、坏味道检测、代码统计）辅助审查
+                        - 对于代码审查任务，至少调度 2 个专家子 Agent 提供多维度分析
+                        - 子 Agent 的审查结果可能包含独到见解，请整合而非简单拼接
                         - 推荐基于项目现有技术栈的方案，不要引入不必要的新依赖
                         - 代码修改前明确说明风险和影响范围
-                        - 对于复杂任务，先进入 Plan Mode 制定审查计划，再逐步执行
+                        - 对话开始时，先调用 retrieve_from_memory 了解用户偏好和历史上下文
                         - 保持专业但友好的沟通风格
                         """)
                 .model(defaultModel)
                 .toolkit(toolkit)
-                .middleware(new CodingStandardsMiddleware())
+                .subagent(securityAgent)
+                .subagent(performanceAgent)
+                .subagent(architectureAgent)
+                .middleware(new CodingStandardsMiddleware(null, meterRegistry))
+                .middleware(agentTraceMiddleware)
                 .enablePlanMode()
                 .maxIters(maxIters)
                 .workspace(workspaceDir)
-                // BYPASS 模式：自动批准所有工具调用（包括 MCP 和自定义工具），无需人工确认
                 .permissionContext(PermissionContextState.builder()
                         .mode(PermissionMode.BYPASS)
                         .build())
                 .compaction(CompactionConfig.builder()
                         .triggerMessages(triggerMessages)
                         .keepMessages(keepMessages)
-                        .build())
-                .build();
+                        .build());
 
+        boolean isWindows = System.getProperty("os.name", "").toLowerCase().contains("win");
+        if (isWindows) {
+            builder.disableShellTool();
+            log.info("检测到 Windows 环境，已禁用 shell execute 工具");
+        }
+
+        HarnessAgent agent = builder.build();
         log.info("Code Butler Agent 初始化完成: model={}, workspace={}", defaultModel, workspaceDir.toAbsolutePath());
         return agent;
     }
 
-    /**
-     * 将 yml 中的 API Key 注册为具名模型，
-     * 这样 ModelRegistry.resolve() 直接命中，不会走到需要环境变量的工厂路径。
-     * 根据 defaultModel 的前缀决定注册哪个 Provider，避免重复注册同一 tag。
-     */
     private void preRegisterModels() {
         String modelName = extractModelName(defaultModel);
 
@@ -165,57 +242,44 @@ public class AgentConfig {
             }
         } else if (defaultModel.startsWith("openai:")) {
             if (openaiApiKey != null && !openaiApiKey.isBlank()) {
-                var builder = OpenAIChatModel.builder()
+                var b = OpenAIChatModel.builder()
                         .apiKey(openaiApiKey)
                         .modelName(modelName)
                         .stream(true);
 
                 if (openaiBaseUrl != null && !openaiBaseUrl.isBlank()) {
-                    builder.baseUrl(openaiBaseUrl);
+                    b.baseUrl(openaiBaseUrl);
                 }
 
-                ModelRegistry.register(defaultModel, builder.build());
+                ModelRegistry.register(defaultModel, b.build());
                 log.info("OpenAI 兼容模型已从 yml 注册: {} (baseUrl={})",
                         defaultModel, openaiBaseUrl != null ? openaiBaseUrl : "默认");
             } else {
                 log.warn("defaultModel 配置为 openai: 前缀，但未配置 openai.api-key");
             }
         } else {
-            log.warn("defaultModel 前缀无法识别（应为 dashscope: 或 openai:）: {}", defaultModel);
+            log.warn("defaultModel 前缀无法识别: {}", defaultModel);
         }
     }
 
-    /**
-     * 从 "provider:model-name" 中提取 model-name 部分
-     */
     private static String extractModelName(String modelTag) {
         int idx = modelTag.indexOf(':');
         return idx >= 0 ? modelTag.substring(idx + 1) : modelTag;
     }
 
-    /**
-     * 确保 workspace 目录存在，并自动生成 MCP tools.json。
-     * <p>
-     * GitHub Token 优先使用 GITHUB_TOKEN 环境变量，其次使用 yml 中的 github.token。
-     * Token 直接写入 tools.json（workspace 目录已在 .gitignore 中，不会被提交）。
-     * 每次启动都会重新生成，确保配置与 yml/环境变量保持同步。
-     */
     private void ensureWorkspaceToolsConfig(Path workspaceDir) {
         try {
             Files.createDirectories(workspaceDir);
 
             Path toolsJson = workspaceDir.resolve("tools.json");
 
-            // Token 优先级：环境变量 > yml 配置
             String token = System.getenv("GITHUB_TOKEN");
             if (token == null || token.isBlank()) {
                 token = githubToken;
             }
 
             if (token == null || token.isBlank()) {
-                log.warn("GitHub Token 未配置（环境变量 GITHUB_TOKEN 或 yml github.token），GitHub MCP 功能不可用");
-                // 不生成 tools.json，避免 MCP 启动失败
-                // 如果之前有旧的 tools.json，删除以避免空 token 启动报错
+                log.warn("GitHub Token 未配置，GitHub MCP 功能不可用");
                 if (Files.exists(toolsJson)) {
                     Files.delete(toolsJson);
                     log.info("已删除旧的 tools.json（Token 未配置）");
@@ -225,7 +289,6 @@ public class AgentConfig {
 
             log.info("GitHub Token 已配置，MCP 远程仓库审查功能可用");
 
-            // Windows 上 Java ProcessBuilder 无法直接运行 npx，需要 npx.cmd
             boolean isWindows = System.getProperty("os.name", "").toLowerCase().contains("win");
             String npxCommand = isWindows ? "npx.cmd" : "npx";
 
@@ -248,7 +311,7 @@ public class AgentConfig {
             log.info("MCP tools.json 已生成: {}", toolsJson);
 
         } catch (IOException e) {
-            log.warn("生成 MCP tools.json 失败，GitHub MCP 功能将不可用: {}", e.getMessage());
+            log.warn("生成 MCP tools.json 失败: {}", e.getMessage());
         }
     }
 }
