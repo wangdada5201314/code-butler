@@ -1,6 +1,7 @@
 package com.agent.codebutler.middleware;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.MiddlewareBase;
@@ -87,7 +88,7 @@ public class CodingStandardsMiddleware implements MiddlewareBase {
     //  1. 系统提示词注入 — 编码规范规则
     // ════════════════════════════════════════════════════════
 
-    public Mono<String> onSystemPrompt(Agent agent, String currentPrompt) {
+    public Mono<String> onSystemPrompt(Agent agent, RuntimeContext runtimeCtx, String currentPrompt) {
         String enhanced = currentPrompt + "\n\n" + codingStandards;
         log.debug("[Middleware] 系统提示词已注入编码规范 (原长度={}, 增强后={})",
                 currentPrompt.length(), enhanced.length());
@@ -98,7 +99,7 @@ public class CodingStandardsMiddleware implements MiddlewareBase {
     //  2. 推理追踪 — 记录每轮推理耗时
     // ════════════════════════════════════════════════════════
 
-    public Flux<AgentEvent> onReasoning(Agent agent, ReasoningInput input,
+    public Flux<AgentEvent> onReasoning(Agent agent, RuntimeContext runtimeCtx, ReasoningInput input,
                                          Function<ReasoningInput, Flux<AgentEvent>> next) {
         String sessionId = extractSessionId(agent);
         Instant start = Instant.now();
@@ -130,7 +131,7 @@ public class CodingStandardsMiddleware implements MiddlewareBase {
     //  3. 工具调用追踪 — 记录工具名称、参数摘要、耗时
     // ════════════════════════════════════════════════════════
 
-    public Flux<AgentEvent> onActing(Agent agent, ActingInput input,
+    public Flux<AgentEvent> onActing(Agent agent, RuntimeContext runtimeCtx, ActingInput input,
                                       Function<ActingInput, Flux<AgentEvent>> next) {
         List<?> toolCalls = input.toolCalls();
         List<String> toolNames = new ArrayList<>();

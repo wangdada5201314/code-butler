@@ -1,5 +1,6 @@
 package com.agent.codebutler.tools;
 
+import com.agent.codebutler.util.FileScanConstants;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import org.slf4j.Logger;
@@ -23,31 +24,16 @@ public class CodeAnalysisTools {
 
     private static final Logger log = LoggerFactory.getLogger(CodeAnalysisTools.class);
 
-    /** 源代码文件扩展名 */
-    private static final Set<String> SOURCE_EXTENSIONS = Set.of(
-            ".java", ".py", ".js", ".ts", ".jsx", ".tsx", ".go", ".rs",
-            ".c", ".cpp", ".h", ".cs", ".rb", ".php", ".swift", ".kt",
-            ".vue", ".html", ".css", ".scss", ".sql", ".yml", ".yaml",
-            ".xml", ".json", ".sh", ".bash"
-    );
-
-    /** 构建时生成的目录 */
-    private static final Set<String> IGNORE_DIRS = Set.of(
-            "node_modules", ".git", "target", "build", "dist", "out",
-            ".idea", ".vscode", "__pycache__", ".gradle", "vendor",
-            ".next", ".nuxt", "bin", "obj"
-    );
-
     // ════════════════════════════════════════════════════════
     //  1. 关键词搜索
     // ════════════════════════════════════════════════════════
 
     @Tool(name = "search_code_files", description = "在仓库中按关键词搜索源代码文件，返回匹配的文件路径和行号")
     public String searchCodeFiles(
-            @ToolParam(name = "repoPath", required = true, description = "仓库根目录的绝对路径") String repoPath,
-            @ToolParam(name = "keyword", required = true, description = "要搜索的关键词（区分大小写）") String keyword) {
+            @ToolParam(name = "repoPath", description = "仓库根目录的绝对路径") String repoPath,
+            @ToolParam(name = "keyword", description = "要搜索的关键词（区分大小写）") String keyword) {
 
-        Path root = validatePath(repoPath);
+        Path root = FileScanConstants.validateRepoPath(repoPath);
         if (root == null) return "错误: 无效的仓库路径";
         if (keyword == null || keyword.isBlank()) return "错误: 关键词不能为空";
 
@@ -58,7 +44,7 @@ public class CodeAnalysisTools {
             Files.walkFileTree(root, new SimpleFileVisitor<>() {
                 @Override
                 public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
-                    return IGNORE_DIRS.contains(dir.getFileName().toString())
+                    return FileScanConstants.IGNORE_DIRS.contains(dir.getFileName().toString())
                             ? FileVisitResult.SKIP_SUBTREE
                             : FileVisitResult.CONTINUE;
                 }
@@ -66,7 +52,7 @@ public class CodeAnalysisTools {
                 @Override
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
                     if (matchCount.get() >= 50) return FileVisitResult.TERMINATE;
-                    if (!isSourceFile(file)) return FileVisitResult.CONTINUE;
+                    if (!FileScanConstants.isSourceFile(file)) return FileVisitResult.CONTINUE;
                     if (attrs.size() > 500_000) return FileVisitResult.CONTINUE; // 跳过大文件
 
                     try {
@@ -100,7 +86,7 @@ public class CodeAnalysisTools {
     public String countCodeLines(
             @ToolParam(name = "repoPath", required = true, description = "仓库根目录的绝对路径") String repoPath) {
 
-        Path root = validatePath(repoPath);
+        Path root = FileScanConstants.validateRepoPath(repoPath);
         if (root == null) return "错误: 无效的仓库路径";
 
         Map<String, int[]> stats = new TreeMap<>(); // lang -> [code, comment, blank]
@@ -110,18 +96,18 @@ public class CodeAnalysisTools {
             Files.walkFileTree(root, new SimpleFileVisitor<>() {
                 @Override
                 public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
-                    return IGNORE_DIRS.contains(dir.getFileName().toString())
+                    return FileScanConstants.IGNORE_DIRS.contains(dir.getFileName().toString())
                             ? FileVisitResult.SKIP_SUBTREE
                             : FileVisitResult.CONTINUE;
                 }
 
                 @Override
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
-                    if (!isSourceFile(file)) return FileVisitResult.CONTINUE;
+                    if (!FileScanConstants.isSourceFile(file)) return FileVisitResult.CONTINUE;
                     if (attrs.size() > 1_000_000) return FileVisitResult.CONTINUE;
 
                     String ext = getExtension(file);
-                    String lang = extensionToLanguage(ext);
+                    String lang = FileScanConstants.detectLanguageByExtension(ext);
                     int[] counts = stats.computeIfAbsent(lang, k -> new int[3]);
                     totalFiles.incrementAndGet();
 
@@ -185,7 +171,7 @@ public class CodeAnalysisTools {
             @ToolParam(name = "repoPath", required = true, description = "仓库根目录的绝对路径") String repoPath,
             @ToolParam(name = "filePath", required = true, description = "相对于仓库根目录的文件路径") String filePath) {
 
-        Path root = validatePath(repoPath);
+        Path root = FileScanConstants.validateRepoPath(repoPath);
         if (root == null) return "错误: 无效的仓库路径";
 
         Path file = root.resolve(filePath).normalize();
@@ -254,7 +240,7 @@ public class CodeAnalysisTools {
     public String detectCodeSmells(
             @ToolParam(name = "repoPath", required = true, description = "仓库根目录的绝对路径") String repoPath) {
 
-        Path root = validatePath(repoPath);
+        Path root = FileScanConstants.validateRepoPath(repoPath);
         if (root == null) return "错误: 无效的仓库路径";
 
         List<String> smells = new ArrayList<>();
@@ -264,14 +250,14 @@ public class CodeAnalysisTools {
             Files.walkFileTree(root, new SimpleFileVisitor<>() {
                 @Override
                 public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
-                    return IGNORE_DIRS.contains(dir.getFileName().toString())
+                    return FileScanConstants.IGNORE_DIRS.contains(dir.getFileName().toString())
                             ? FileVisitResult.SKIP_SUBTREE
                             : FileVisitResult.CONTINUE;
                 }
 
                 @Override
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
-                    if (!isSourceFile(file)) return FileVisitResult.CONTINUE;
+                    if (!FileScanConstants.isSourceFile(file)) return FileVisitResult.CONTINUE;
                     if (attrs.size() > 1_000_000) return FileVisitResult.CONTINUE;
                     filesScanned.incrementAndGet();
 
@@ -360,53 +346,10 @@ public class CodeAnalysisTools {
     //  内部工具方法
     // ════════════════════════════════════════════════════════
 
-    private Path validatePath(String pathStr) {
-        if (pathStr == null || pathStr.isBlank()) return null;
-        try {
-            Path path = Paths.get(pathStr).normalize().toAbsolutePath();
-            if (!Files.isDirectory(path)) return null;
-            return path;
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private boolean isSourceFile(Path file) {
-        String name = file.getFileName().toString().toLowerCase();
-        return SOURCE_EXTENSIONS.stream().anyMatch(name::endsWith);
-    }
-
     private String getExtension(Path file) {
         String name = file.getFileName().toString();
         int dot = name.lastIndexOf('.');
         return dot >= 0 ? name.substring(dot) : "";
-    }
-
-    private String extensionToLanguage(String ext) {
-        return switch (ext) {
-            case ".java" -> "Java";
-            case ".py" -> "Python";
-            case ".js", ".jsx" -> "JavaScript";
-            case ".ts", ".tsx" -> "TypeScript";
-            case ".go" -> "Go";
-            case ".rs" -> "Rust";
-            case ".c", ".h" -> "C";
-            case ".cpp" -> "C++";
-            case ".cs" -> "C#";
-            case ".rb" -> "Ruby";
-            case ".php" -> "PHP";
-            case ".swift" -> "Swift";
-            case ".kt" -> "Kotlin";
-            case ".vue" -> "Vue";
-            case ".html" -> "HTML";
-            case ".css", ".scss" -> "CSS";
-            case ".sql" -> "SQL";
-            case ".yml", ".yaml" -> "YAML";
-            case ".xml" -> "XML";
-            case ".json" -> "JSON";
-            case ".sh", ".bash" -> "Shell";
-            default -> "Other";
-        };
     }
 
     private String complexityRating(int complexity) {

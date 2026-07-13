@@ -91,6 +91,8 @@ cors:
 agentscope:
   model:
     default: ${AGENTSCOPE_MODEL:openai:deepseek-chat}
+    fallback: ${AGENTSCOPE_FALLBACK_MODEL:}    # 备用模型（主模型超时/限流时自动切换）
+    max-retries: ${AGENTSCOPE_MAX_RETRIES:3}   # 主模型最大重试次数
   call-timeout-seconds: 120
   workspace:
     path: .agentscope/workspace

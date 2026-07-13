@@ -13,13 +13,13 @@
 
     <groupId>com.agent</groupId>
     <artifactId>code-butler</artifactId>
-    <version>4.0.0</version>
+    <version>4.1.0</version>
     <name>Code Butler</name>
     <description>代码仓库智能管家 - 基于 AgentScope 2.0 + Spring Boot 的 AI 代码助手</description>
 
     <properties>
         <java.version>21</java.version>
-        <agentscope.version>2.0.0-RC1</agentscope.version>
+        <agentscope.version>2.0.0</agentscope.version>
     </properties>
 
     <!-- AgentScope 2.0 Maven 仓库 -->
@@ -90,6 +90,20 @@
                     <artifactId>commons-logging</artifactId>
                 </exclusion>
             </exclusions>
+        </dependency>
+
+        <!-- AgentScope 2.0 模型扩展：OpenAI 兼容协议（DeepSeek/GLM 等） -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-openai</artifactId>
+            <version>${agentscope.version}</version>
+        </dependency>
+
+        <!-- AgentScope 2.0 模型扩展：DashScope（通义千问） -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-dashscope</artifactId>
+            <version>${agentscope.version}</version>
         </dependency>
 
         <!-- Lombok -->

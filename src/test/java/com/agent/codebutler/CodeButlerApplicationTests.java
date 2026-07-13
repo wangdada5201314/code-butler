@@ -1,6 +1,7 @@
 package com.agent.codebutler;
 
 import com.agent.codebutler.service.ChatService;
+import com.agent.codebutler.service.CodeKnowledgeRepository;
 import com.agent.codebutler.service.CodeKnowledgeService;
 import com.agent.codebutler.service.CodeReviewService;
 import com.agent.codebutler.service.DashScopeEmbeddingService;
@@ -52,6 +53,9 @@ class CodeButlerApplicationTests {
 
     @MockBean
     private CodeKnowledgeService codeKnowledgeService;
+
+    @MockBean
+    private CodeKnowledgeRepository codeKnowledgeRepository;
 
     @MockBean
     private CodeReviewService codeReviewService;

@@ -85,13 +85,29 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.error(400, ex.getMessage()));
     }
 
-    /** 业务异常 */
+    /** 业务异常 — 根据语义错误码映射 HTTP 状态 */
     @ExceptionHandler(com.agent.codebutler.exception.BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> handleBusinessException(
             com.agent.codebutler.exception.BusinessException ex) {
         log.warn("业务异常: code={}, message={}", ex.getCode(), ex.getMessage());
-        return ResponseEntity.badRequest()
+        HttpStatus httpStatus = mapToHttpStatus(ex.getCode());
+        return ResponseEntity.status(httpStatus)
                 .body(ApiResponse.error(ex.getCode(), ex.getMessage()));
+    }
+
+    /**
+     * 将业务错误码映射到 HTTP 状态码
+     * <p>
+     * 401xx → 401 Unauthorized, 403xx → 403 Forbidden,
+     * 404xx → 404 Not Found, 500xx → 500 Internal Server Error,
+     * 其余 → 400 Bad Request
+     */
+    private HttpStatus mapToHttpStatus(int code) {
+        if (code >= 40100 && code < 40200) return HttpStatus.UNAUTHORIZED;
+        if (code >= 40300 && code < 40400) return HttpStatus.FORBIDDEN;
+        if (code >= 40400 && code < 40500) return HttpStatus.NOT_FOUND;
+        if (code >= 50000 && code < 60000) return HttpStatus.INTERNAL_SERVER_ERROR;
+        return HttpStatus.BAD_REQUEST;
     }
 
     // ---- 408 类 ----

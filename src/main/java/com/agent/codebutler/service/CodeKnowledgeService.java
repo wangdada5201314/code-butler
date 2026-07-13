@@ -1,10 +1,7 @@
 package com.agent.codebutler.service;
 
-import com.agent.codebutler.mapper.CodeKnowledgeMapper;
-import com.agent.codebutler.model.entity.CodeKnowledgeEntity;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.mybatisflex.core.query.QueryWrapper;
+import com.agent.codebutler.util.FileScanConstants;
+import com.agent.codebutler.util.VectorUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -12,15 +9,9 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-
-import static com.agent.codebutler.model.entity.table.CodeKnowledgeEntityTableDef.CODE_KNOWLEDGE_ENTITY;
 
 /**
  * 代码知识索引与检索服务（RAG 核心）
@@ -33,6 +24,13 @@ import static com.agent.codebutler.model.entity.table.CodeKnowledgeEntityTableDe
  * <p>
  * 内存向量缓存 + MySQL 持久化双层架构，启动时从 DB 预热缓存，
  * 后续查询直接走内存余弦相似度计算，毫秒级响应。
+ * <p>
+ * 职责拆分：
+ * <ul>
+ *     <li>{@link CodeChunker} — 代码分块逻辑</li>
+ *     <li>{@link CodeKnowledgeRepository} — 数据库持久化</li>
+ *     <li>本类 — 索引编排 + 语义检索 + 缓存管理</li>
+ * </ul>
  */
 @Service
 public class CodeKnowledgeService {
@@ -45,42 +43,18 @@ public class CodeKnowledgeService {
     /** 索引状态追踪: repoPath → IndexStatus */
     private final Map<String, IndexStatus> indexStatusMap = new ConcurrentHashMap<>();
 
-    private static final int CHUNK_SIZE = 1500;
-    private static final int CHUNK_OVERLAP = 200;
     private static final int DEFAULT_TOP_K = 5;
 
-    private static final Set<String> IGNORE_DIRS = Set.of(
-            "node_modules", ".git", "target", "build", "dist", "out",
-            ".idea", ".vscode", "__pycache__", ".gradle", "vendor",
-            ".next", ".nuxt", "bin", "obj", ".mvn"
-    );
-
-    private static final Set<String> SOURCE_EXTENSIONS = Set.of(
-            ".java", ".py", ".js", ".ts", ".jsx", ".tsx", ".go", ".rs",
-            ".c", ".cpp", ".h", ".cs", ".rb", ".php", ".swift", ".kt",
-            ".vue", ".html", ".css", ".scss", ".sql", ".yml", ".yaml",
-            ".xml", ".json", ".sh", ".bash", ".md", ".properties"
-    );
-
-    /** 代码块边界正则（匹配方法/类/函数声明） */
-    private static final Pattern CODE_BLOCK_PATTERN = Pattern.compile(
-            "^\\s*(?:" +
-                    "public|private|protected|static|final|abstract|synchronized|native|default" +
-                    "|class|interface|enum|record" +
-                    "|def|fn|func|function|async|export|import" +
-                    ")\\s+",
-            Pattern.MULTILINE
-    );
-
     private final DashScopeEmbeddingService embeddingService;
-    private final CodeKnowledgeMapper codeKnowledgeMapper;
-    private final ObjectMapper objectMapper;
+    private final CodeChunker codeChunker;
+    private final CodeKnowledgeRepository knowledgeRepo;
 
     public CodeKnowledgeService(DashScopeEmbeddingService embeddingService,
-                                CodeKnowledgeMapper codeKnowledgeMapper) {
+                                CodeChunker codeChunker,
+                                CodeKnowledgeRepository knowledgeRepo) {
         this.embeddingService = embeddingService;
-        this.codeKnowledgeMapper = codeKnowledgeMapper;
-        this.objectMapper = new ObjectMapper();
+        this.codeChunker = codeChunker;
+        this.knowledgeRepo = knowledgeRepo;
     }
 
     // ════════════════════════════════════════════════════════
@@ -96,55 +70,58 @@ public class CodeKnowledgeService {
      * @return 索引统计信息
      */
     public IndexResult indexRepository(String repoPath) {
-        Path root = validateRepoPath(repoPath);
+        Path root = FileScanConstants.validateRepoPath(repoPath);
         if (root == null) {
             throw new IllegalArgumentException("无效的仓库路径: " + repoPath);
         }
 
         String normalizedPath = root.toString();
-        IndexStatus status = new IndexStatus();
-        indexStatusMap.put(normalizedPath, status);
+        IndexStatus.Builder statusBuilder = new IndexStatus.Builder();
+        indexStatusMap.put(normalizedPath, statusBuilder.build());
 
         try {
             // 1. 扫描所有源代码文件
-            status.phase = "扫描文件";
+            statusBuilder.phase("扫描文件");
             List<Path> sourceFiles;
             try {
-                sourceFiles = scanSourceFiles(root);
+                sourceFiles = FileScanConstants.scanSourceFiles(root, 0);
             } catch (IOException e) {
                 throw new RuntimeException("扫描文件失败: " + e.getMessage(), e);
             }
-            status.totalFiles = sourceFiles.size();
+            statusBuilder.totalFiles(sourceFiles.size());
+            indexStatusMap.put(normalizedPath, statusBuilder.build());
             log.info("[RAG] 开始索引仓库: {}, 找到 {} 个源文件", normalizedPath, sourceFiles.size());
 
-            // 2. 代码分块
-            status.phase = "代码分块";
-            List<CodeChunk> chunks = new ArrayList<>();
+            // 2. 代码分块（委托 CodeChunker）
+            statusBuilder.phase("代码分块");
+            List<CodeChunker.CodeChunk> chunks = new ArrayList<>();
             for (Path file : sourceFiles) {
                 try {
                     String content = Files.readString(file, StandardCharsets.UTF_8);
                     String relativePath = root.relativize(file).toString().replace('\\', '/');
-                    String language = detectLanguage(file);
-                    List<CodeChunk> fileChunks = splitIntoChunks(content, relativePath, language);
+                    String language = FileScanConstants.detectLanguage(file);
+                    List<CodeChunker.CodeChunk> fileChunks = codeChunker.splitIntoChunks(content, relativePath, language);
                     chunks.addAll(fileChunks);
                 } catch (Exception e) {
                     log.warn("[RAG] 跳过文件 {}: {}", file, e.getMessage());
                 }
             }
-            status.totalChunks = chunks.size();
+            statusBuilder.totalChunks(chunks.size());
+            indexStatusMap.put(normalizedPath, statusBuilder.build());
             log.info("[RAG] 代码分块完成: {} 个 chunks", chunks.size());
 
             // 3. 批量 Embedding（每批最多 20 条，避免 API 超限）
-            status.phase = "向量化";
+            statusBuilder.phase("向量化");
             int batchSize = 20;
             List<double[]> allEmbeddings = new ArrayList<>();
             for (int i = 0; i < chunks.size(); i += batchSize) {
                 List<String> batch = chunks.subList(i, Math.min(i + batchSize, chunks.size()))
-                        .stream().map(c -> c.content).toList();
+                        .stream().map(CodeChunker.CodeChunk::content).toList();
                 try {
                     List<double[]> embeddings = embeddingService.batchEmbed(batch);
                     allEmbeddings.addAll(embeddings);
-                    status.processedChunks = allEmbeddings.size();
+                    statusBuilder.processedChunks(allEmbeddings.size());
+                    indexStatusMap.put(normalizedPath, statusBuilder.build());
                     log.info("[RAG] Embedding 进度: {}/{}", allEmbeddings.size(), chunks.size());
                 } catch (Exception e) {
                     log.error("[RAG] Embedding 批次失败 (offset={}): {}", i, e.getMessage());
@@ -155,42 +132,39 @@ public class CodeKnowledgeService {
                 }
             }
 
-            // 4. 持久化到 MySQL + 刷新内存缓存
-            status.phase = "持久化";
-            deleteByRepoPath(normalizedPath); // 清除旧数据
+            // 4. 持久化到 MySQL + 刷新内存缓存（委托 CodeKnowledgeRepository）
+            statusBuilder.phase("持久化");
+            indexStatusMap.put(normalizedPath, statusBuilder.build());
+            knowledgeRepo.deleteByRepoPath(normalizedPath); // 清除旧数据
 
-            List<KnowledgeChunk> knowledgeChunks = new ArrayList<>();
-            for (int i = 0; i < chunks.size() && i < allEmbeddings.size(); i++) {
-                CodeChunk chunk = chunks.get(i);
-                double[] embedding = allEmbeddings.get(i);
-
-                CodeKnowledgeEntity entity = CodeKnowledgeEntity.builder()
-                        .repoPath(normalizedPath)
-                        .filePath(chunk.filePath)
-                        .chunkId(chunk.chunkId)
-                        .content(chunk.content)
-                        .language(chunk.language)
-                        .embedding(serializeEmbedding(embedding))
-                        .build();
-                codeKnowledgeMapper.insert(entity);
-
-                knowledgeChunks.add(new KnowledgeChunk(
-                        entity.getId(), chunk.filePath, chunk.chunkId,
-                        chunk.content, chunk.language, embedding));
-            }
-
+            List<KnowledgeChunk> knowledgeChunks = knowledgeRepo.saveChunks(normalizedPath, chunks, allEmbeddings);
             vectorCache.put(normalizedPath, knowledgeChunks);
 
-            status.phase = "完成";
-            status.indexedChunks = knowledgeChunks.size();
+            statusBuilder.phase("完成").indexedChunks(knowledgeChunks.size());
+            IndexStatus finalStatus = statusBuilder.build();
+            indexStatusMap.put(normalizedPath, finalStatus);
             log.info("[RAG] 仓库索引完成: {} — {} 文件, {} 分块",
-                    normalizedPath, status.totalFiles, status.indexedChunks);
+                    normalizedPath, finalStatus.getTotalFiles(), finalStatus.getIndexedChunks());
 
-            return new IndexResult(status.totalFiles, status.totalChunks, status.indexedChunks);
+            return new IndexResult(finalStatus.getTotalFiles(), finalStatus.getTotalChunks(), finalStatus.getIndexedChunks());
 
+        } catch (Exception e) {
+            // 异常时标记为失败
+            statusBuilder.phase("失败");
+            indexStatusMap.put(normalizedPath, statusBuilder.build());
+            throw e;
         } finally {
-            // 保留状态供查询，30 分钟后自动过期（由调用方决定）
-            status.phase = status.phase.equals("完成") ? "已完成" : "失败";
+            // 将最终状态从"完成"改为"已完成"（仅成功时）
+            IndexStatus current = indexStatusMap.get(normalizedPath);
+            if (current != null && "完成".equals(current.getPhase())) {
+                IndexStatus.Builder completedBuilder = new IndexStatus.Builder()
+                        .phase("已完成")
+                        .totalFiles(current.getTotalFiles())
+                        .totalChunks(current.getTotalChunks())
+                        .processedChunks(current.getProcessedChunks())
+                        .indexedChunks(current.getIndexedChunks());
+                indexStatusMap.put(normalizedPath, completedBuilder.build());
+            }
         }
     }
 
@@ -221,9 +195,9 @@ public class CodeKnowledgeService {
             // 2. 从内存缓存检索
             List<KnowledgeChunk> chunks = vectorCache.get(normalizedPath);
 
-            // 3. 缓存未命中 → 从 MySQL 加载
+            // 3. 缓存未命中 → 从 MySQL 加载（委托 CodeKnowledgeRepository）
             if (chunks == null || chunks.isEmpty()) {
-                chunks = loadFromDatabase(normalizedPath);
+                chunks = knowledgeRepo.loadFromDatabase(normalizedPath);
                 if (!chunks.isEmpty()) {
                     vectorCache.put(normalizedPath, chunks);
                     log.info("[RAG] 从数据库加载 {} 个知识片段到缓存: {}", chunks.size(), normalizedPath);
@@ -240,7 +214,7 @@ public class CodeKnowledgeService {
             return chunks.stream()
                     .map(chunk -> new SearchResult(
                             chunk.filePath, chunk.chunkId, chunk.content,
-                            chunk.language, DashScopeEmbeddingService.cosineSimilarity(queryVector, chunk.embedding)))
+                            chunk.language, VectorUtils.cosineSimilarity(queryVector, chunk.embedding)))
                     .sorted(Comparator.comparingDouble(SearchResult::score).reversed())
                     .limit(k)
                     .filter(r -> r.score > 0.05) // 过滤低相关性结果
@@ -309,16 +283,16 @@ public class CodeKnowledgeService {
         String normalizedPath = Paths.get(repoPath).normalize().toAbsolutePath().toString();
         IndexStatus status = indexStatusMap.get(normalizedPath);
         if (status == null) {
-            status = new IndexStatus();
-            status.phase = "未索引";
-            // 查询数据库中是否有数据
-            long count = codeKnowledgeMapper.selectCountByQuery(
-                    QueryWrapper.create().where(CODE_KNOWLEDGE_ENTITY.REPO_PATH.eq(normalizedPath)));
-            if (count > 0) {
-                status.indexedChunks = (int) count;
-                status.phase = "已索引（数据库）";
-                // 从数据库统计去重文件数（totalFiles 仅在索引过程中实时设置，完成后未持久化）
-                status.totalFiles = countDistinctFiles(normalizedPath);
+            // 查询数据库中是否有数据（委托 CodeKnowledgeRepository）
+            int chunkCount = knowledgeRepo.getChunkCount(normalizedPath);
+            if (chunkCount > 0) {
+                status = new IndexStatus.Builder()
+                        .phase("已索引（数据库）")
+                        .indexedChunks(chunkCount)
+                        .totalFiles(knowledgeRepo.countDistinctFiles(normalizedPath))
+                        .build();
+            } else {
+                status = new IndexStatus.Builder().phase("未索引").build();
             }
         }
         return status;
@@ -331,241 +305,15 @@ public class CodeKnowledgeService {
         String normalizedPath = Paths.get(repoPath).normalize().toAbsolutePath().toString();
         List<KnowledgeChunk> cached = vectorCache.get(normalizedPath);
         if (cached != null) return cached.size();
-        return (int) codeKnowledgeMapper.selectCountByQuery(
-                QueryWrapper.create().where(CODE_KNOWLEDGE_ENTITY.REPO_PATH.eq(normalizedPath)));
-    }
-
-    // ════════════════════════════════════════════════════════
-    //  内部方法 — 文件扫描与分块
-    // ════════════════════════════════════════════════════════
-
-    private List<Path> scanSourceFiles(Path root) throws IOException {
-        List<Path> files = new ArrayList<>();
-        Files.walkFileTree(root, new SimpleFileVisitor<>() {
-            @Override
-            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
-                return IGNORE_DIRS.contains(dir.getFileName().toString())
-                        ? FileVisitResult.SKIP_SUBTREE
-                        : FileVisitResult.CONTINUE;
-            }
-
-            @Override
-            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
-                if (isSourceFile(file) && attrs.size() > 0 && attrs.size() < 500_000) {
-                    files.add(file);
-                }
-                return FileVisitResult.CONTINUE;
-            }
-        });
-        return files;
-    }
-
-    /**
-     * 将文件内容分割为代码块
-     * <p>
-     * 策略：优先按方法/类边界分割，超长块再按固定大小切分，保留重叠区域。
-     */
-    private List<CodeChunk> splitIntoChunks(String content, String filePath, String language) {
-        List<CodeChunk> chunks = new ArrayList<>();
-
-        if (content.isBlank()) return chunks;
-
-        // 尝试按代码块边界分割
-        List<String> blocks = splitByCodeBlocks(content);
-
-        int chunkIndex = 0;
-        for (String block : blocks) {
-            if (block.length() > CHUNK_SIZE * 2) {
-                // 超大块 → 按固定大小再切
-                for (int i = 0; i < block.length(); i += CHUNK_SIZE - CHUNK_OVERLAP) {
-                    int end = Math.min(i + CHUNK_SIZE, block.length());
-                    String subChunk = block.substring(i, end);
-                    if (subChunk.trim().length() > 30) { // 跳过过短的片段
-                        chunks.add(new CodeChunk(filePath, "chunk_" + chunkIndex++, subChunk.trim(), language));
-                    }
-                }
-            } else if (block.trim().length() > 30) {
-                chunks.add(new CodeChunk(filePath, "chunk_" + chunkIndex++, block.trim(), language));
-            }
-        }
-
-        // 兜底：如果按代码块分割失败（只产生了一个大块），使用固定大小分块
-        if (chunks.size() <= 1 && content.length() > CHUNK_SIZE) {
-            chunks.clear();
-            chunkIndex = 0;
-            for (int i = 0; i < content.length(); i += CHUNK_SIZE - CHUNK_OVERLAP) {
-                int end = Math.min(i + CHUNK_SIZE, content.length());
-                String subChunk = content.substring(i, end);
-                if (subChunk.trim().length() > 30) {
-                    chunks.add(new CodeChunk(filePath, "chunk_" + chunkIndex++, subChunk.trim(), language));
-                }
-            }
-        }
-
-        return chunks;
-    }
-
-    /**
-     * 按代码块边界（方法/类声明）分割文件内容
-     */
-    private List<String> splitByCodeBlocks(String content) {
-        List<String> blocks = new ArrayList<>();
-        Matcher matcher = CODE_BLOCK_PATTERN.matcher(content);
-
-        int lastEnd = 0;
-        List<Integer> boundaries = new ArrayList<>();
-        while (matcher.find()) {
-            boundaries.add(matcher.start());
-        }
-
-        if (boundaries.isEmpty() || boundaries.get(0) > 100) {
-            // 没有匹配到代码块边界，或第一个边界前有大量代码 → 整体作为一个块
-            blocks.add(content);
-            return blocks;
-        }
-
-        // 按边界切分
-        for (int i = 0; i < boundaries.size(); i++) {
-            int start = boundaries.get(i);
-            int end = (i + 1 < boundaries.size()) ? boundaries.get(i + 1) : content.length();
-            String block = content.substring(start, end);
-            if (block.trim().length() > 30) {
-                blocks.add(block);
-            }
-        }
-
-        // 第一个边界前的内容（如 import 块、文件头注释）
-        if (boundaries.get(0) > 50) {
-            String header = content.substring(0, boundaries.get(0));
-            if (header.trim().length() > 30) {
-                blocks.add(0, header);
-            }
-        }
-
-        return blocks;
-    }
-
-    // ════════════════════════════════════════════════════════
-    //  内部方法 — 数据库操作
-    // ════════════════════════════════════════════════════════
-
-    /**
-     * 从 MySQL 加载知识片段到内存
-     */
-    private List<KnowledgeChunk> loadFromDatabase(String repoPath) {
-        List<CodeKnowledgeEntity> entities = codeKnowledgeMapper.selectListByQuery(
-                QueryWrapper.create().where(CODE_KNOWLEDGE_ENTITY.REPO_PATH.eq(repoPath)));
-
-        List<KnowledgeChunk> chunks = new ArrayList<>();
-        for (CodeKnowledgeEntity entity : entities) {
-            double[] embedding = parseEmbedding(entity.getEmbedding());
-            chunks.add(new KnowledgeChunk(
-                    entity.getId(), entity.getFilePath(), entity.getChunkId(),
-                    entity.getContent(), entity.getLanguage(), embedding));
-        }
-        return chunks;
-    }
-
-    /**
-     * 删除仓库的所有索引数据
-     */
-    private void deleteByRepoPath(String repoPath) {
-        codeKnowledgeMapper.deleteByQuery(
-                QueryWrapper.create().where(CODE_KNOWLEDGE_ENTITY.REPO_PATH.eq(repoPath)));
-    }
-
-    /**
-     * 统计仓库在数据库中的去重文件数
-     */
-    private int countDistinctFiles(String repoPath) {
-        List<CodeKnowledgeEntity> entities = codeKnowledgeMapper.selectListByQuery(
-                QueryWrapper.create()
-                        .select(CODE_KNOWLEDGE_ENTITY.FILE_PATH)
-                        .where(CODE_KNOWLEDGE_ENTITY.REPO_PATH.eq(repoPath))
-                        .groupBy(CODE_KNOWLEDGE_ENTITY.FILE_PATH));
-        return entities.size();
-    }
-
-    // ════════════════════════════════════════════════════════
-    //  内部方法 — 向量序列化/反序列化
-    // ════════════════════════════════════════════════════════
-
-    private String serializeEmbedding(double[] embedding) {
-        try {
-            return objectMapper.writeValueAsString(embedding);
-        } catch (JsonProcessingException e) {
-            // 手动构建 JSON 数组
-            StringBuilder sb = new StringBuilder("[");
-            for (int i = 0; i < embedding.length; i++) {
-                if (i > 0) sb.append(",");
-                sb.append(embedding[i]);
-            }
-            return sb.append("]").toString();
-        }
-    }
-
-    private double[] parseEmbedding(String json) {
-        try {
-            return objectMapper.readValue(json, double[].class);
-        } catch (Exception e) {
-            log.warn("解析 embedding JSON 失败: {}", e.getMessage());
-            return new double[0];
-        }
-    }
-
-    // ════════════════════════════════════════════════════════
-    //  内部方法 — 文件类型检测
-    // ════════════════════════════════════════════════════════
-
-    private boolean isSourceFile(Path file) {
-        String name = file.getFileName().toString().toLowerCase();
-        return SOURCE_EXTENSIONS.stream().anyMatch(name::endsWith);
-    }
-
-    private String detectLanguage(Path file) {
-        String name = file.getFileName().toString().toLowerCase();
-        if (name.endsWith(".java")) return "Java";
-        if (name.endsWith(".py")) return "Python";
-        if (name.endsWith(".js") || name.endsWith(".jsx")) return "JavaScript";
-        if (name.endsWith(".ts") || name.endsWith(".tsx")) return "TypeScript";
-        if (name.endsWith(".go")) return "Go";
-        if (name.endsWith(".rs")) return "Rust";
-        if (name.endsWith(".c") || name.endsWith(".h")) return "C";
-        if (name.endsWith(".cpp")) return "C++";
-        if (name.endsWith(".cs")) return "C#";
-        if (name.endsWith(".rb")) return "Ruby";
-        if (name.endsWith(".php")) return "PHP";
-        if (name.endsWith(".swift")) return "Swift";
-        if (name.endsWith(".kt")) return "Kotlin";
-        if (name.endsWith(".vue")) return "Vue";
-        if (name.endsWith(".sql")) return "SQL";
-        if (name.endsWith(".yml") || name.endsWith(".yaml")) return "YAML";
-        if (name.endsWith(".xml")) return "XML";
-        if (name.endsWith(".json")) return "JSON";
-        if (name.endsWith(".md")) return "Markdown";
-        if (name.endsWith(".properties")) return "Properties";
-        return "Text";
-    }
-
-    private Path validateRepoPath(String repoPath) {
-        if (repoPath == null || repoPath.isBlank()) return null;
-        try {
-            Path path = Paths.get(repoPath).normalize().toAbsolutePath();
-            return Files.isDirectory(path) ? path : null;
-        } catch (Exception e) {
-            return null;
-        }
+        return knowledgeRepo.getChunkCount(normalizedPath);
     }
 
     // ════════════════════════════════════════════════════════
     //  内部数据类
     // ════════════════════════════════════════════════════════
 
-    /** 代码分块 */
-    record CodeChunk(String filePath, String chunkId, String content, String language) {}
-
     /** 内存中的知识片段（含向量） */
-    record KnowledgeChunk(Long id, String filePath, String chunkId, String content,
+    public record KnowledgeChunk(Long id, String filePath, String chunkId, String content,
                           String language, double[] embedding) {}
 
     /** 检索结果 */
@@ -575,12 +323,48 @@ public class CodeKnowledgeService {
     /** 索引结果统计 */
     public record IndexResult(int totalFiles, int totalChunks, int indexedChunks) {}
 
-    /** 索引状态（可变对象，用于进度追踪） */
+    /** 索引状态（不可变快照，线程安全） */
     public static class IndexStatus {
-        public String phase = "未开始";
-        public int totalFiles = 0;
-        public int totalChunks = 0;
-        public int processedChunks = 0;
-        public int indexedChunks = 0;
+        private final String phase;
+        private final int totalFiles;
+        private final int totalChunks;
+        private final int processedChunks;
+        private final int indexedChunks;
+
+        private IndexStatus(Builder builder) {
+            this.phase = builder.phase;
+            this.totalFiles = builder.totalFiles;
+            this.totalChunks = builder.totalChunks;
+            this.processedChunks = builder.processedChunks;
+            this.indexedChunks = builder.indexedChunks;
+        }
+
+        /** 默认构造（未开始状态） */
+        public IndexStatus() {
+            this(new Builder());
+        }
+
+        public String getPhase() { return phase; }
+        public int getTotalFiles() { return totalFiles; }
+        public int getTotalChunks() { return totalChunks; }
+        public int getProcessedChunks() { return processedChunks; }
+        public int getIndexedChunks() { return indexedChunks; }
+
+        /** 可变构建器，用于索引过程中的渐进式状态更新 */
+        public static class Builder {
+            private String phase = "未开始";
+            private int totalFiles = 0;
+            private int totalChunks = 0;
+            private int processedChunks = 0;
+            private int indexedChunks = 0;
+
+            public Builder phase(String phase) { this.phase = phase; return this; }
+            public Builder totalFiles(int totalFiles) { this.totalFiles = totalFiles; return this; }
+            public Builder totalChunks(int totalChunks) { this.totalChunks = totalChunks; return this; }
+            public Builder processedChunks(int processedChunks) { this.processedChunks = processedChunks; return this; }
+            public Builder indexedChunks(int indexedChunks) { this.indexedChunks = indexedChunks; return this; }
+
+            public IndexStatus build() { return new IndexStatus(this); }
+        }
     }
 }

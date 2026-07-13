@@ -1,25 +1,22 @@
-package com.agent.codebutler.service;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
+package com.agent.codebutler.util;
 
 import java.net.URI;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * GitHub 仓库 URL 解析与校验服务
+ * GitHub 仓库 URL 解析与校验工具类
+ * <p>
+ * 纯静态方法，无需注入 Spring 容器。
  * <p>
  * 支持格式：
  * - https://github.com/owner/repo
  * - https://github.com/owner/repo.git
  * - github.com/owner/repo
  */
-@Service
-public class GitHubService {
+public final class GitHubUtils {
 
-    private static final Logger log = LoggerFactory.getLogger(GitHubService.class);
+    private GitHubUtils() {}
 
     /** 匹配 GitHub URL 的正则 */
     private static final Pattern GITHUB_PATTERN = Pattern.compile(

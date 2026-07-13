@@ -2,6 +2,7 @@ package com.agent.codebutler.service;
 
 import com.agent.codebutler.mapper.UserMemoryMapper;
 import com.agent.codebutler.model.entity.UserMemoryEntity;
+import com.agent.codebutler.util.VectorUtils;
 import com.mybatisflex.core.query.QueryWrapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -9,6 +10,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -27,14 +29,9 @@ public class UserMemoryService {
     private final UserMemoryMapper mapper;
     private final DashScopeEmbeddingService embedding;
 
-    /** 内存缓存：user_id → 记忆列表（线程安全 LRU） */
-    private final Map<Long, List<CachedMemory>> cache = Collections.synchronizedMap(
-            new LinkedHashMap<>() {
-                @Override
-                protected boolean removeEldestEntry(Map.Entry<Long, List<CachedMemory>> eldest) {
-                    return size() > 100;
-                }
-            });
+    /** 内存缓存：user_id → 记忆列表（ConcurrentHashMap + 手动 LRU 淘汰） */
+    private static final int MAX_CACHE_USERS = 100;
+    private final Map<Long, List<CachedMemory>> cache = new ConcurrentHashMap<>();
 
     public UserMemoryService(UserMemoryMapper mapper, DashScopeEmbeddingService embedding) {
         this.mapper = mapper;
@@ -62,7 +59,7 @@ public class UserMemoryService {
             vector = new double[1024];
         }
 
-        String embeddingJson = DashScopeEmbeddingService.vectorToJson(vector);
+        String embeddingJson = VectorUtils.vectorToJson(vector);
         String summaryText = (summary != null && !summary.isBlank())
                 ? summary
                 : (content.length() > 80 ? content.substring(0, 80) + "..." : content);
@@ -113,7 +110,7 @@ public class UserMemoryService {
         return memories.stream()
                 .map(m -> new SearchResult(
                         m.entity,
-                        DashScopeEmbeddingService.cosineSimilarity(queryVector, m.vector)))
+                        VectorUtils.cosineSimilarity(queryVector, m.vector)))
                 .sorted(Comparator.comparingDouble(SearchResult::score).reversed())
                 .limit(limit)
                 .filter(r -> r.score > 0.05)
@@ -162,7 +159,7 @@ public class UserMemoryService {
         // 重新向量化
         try {
             double[] vector = embedding.embed(newContent);
-            entity.setEmbedding(DashScopeEmbeddingService.vectorToJson(vector));
+            entity.setEmbedding(VectorUtils.vectorToJson(vector));
         } catch (Exception e) {
             log.warn("更新记忆向量化失败: {}", e.getMessage());
         }
@@ -191,30 +188,44 @@ public class UserMemoryService {
     // ---- 内部缓存逻辑 ----
 
     private List<CachedMemory> loadUserMemories(Long userId) {
-        if (cache.containsKey(userId)) {
-            return cache.get(userId);
+        return cache.computeIfAbsent(userId, id -> {
+            // 从 DB 加载（跳过 embedding 为 null 的条目）
+            List<UserMemoryEntity> entities = mapper.selectListByQuery(
+                    QueryWrapper.create()
+                            .eq("user_id", id)
+                            .isNotNull("embedding")
+                            .orderBy("create_time", false));
+
+            List<CachedMemory> result = entities.stream()
+                    .map(e -> {
+                        try {
+                            double[] v = VectorUtils.jsonToVector(e.getEmbedding());
+                            return new CachedMemory(e, v);
+                        } catch (Exception ex) {
+                            return null;
+                        }
+                    })
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+
+            // 缓存超限淘汰：当缓存条目超过阈值时，移除一个非当前用户的条目
+            evictIfNeeded(id);
+            return result;
+        });
+    }
+
+    /**
+     * 缓存淘汰：当缓存用户数超过 MAX_CACHE_USERS 时，移除一个非当前用户的条目
+     */
+    private void evictIfNeeded(Long currentUserId) {
+        if (cache.size() <= MAX_CACHE_USERS) return;
+        // 移除任意一个非当前用户的条目（ConcurrentHashMap 迭代安全）
+        for (Long key : cache.keySet()) {
+            if (!key.equals(currentUserId)) {
+                cache.remove(key);
+                break;
+            }
         }
-        // 从 DB 加载（跳过 embedding 为 null 的条目）
-        List<UserMemoryEntity> entities = mapper.selectListByQuery(
-                QueryWrapper.create()
-                        .eq("user_id", userId)
-                        .isNotNull("embedding")
-                        .orderBy("create_time", false));
-
-        List<CachedMemory> result = entities.stream()
-                .map(e -> {
-                    try {
-                        double[] v = DashScopeEmbeddingService.jsonToVector(e.getEmbedding());
-                        return new CachedMemory(e, v);
-                    } catch (Exception ex) {
-                        return null;
-                    }
-                })
-                .filter(Objects::nonNull)
-                .collect(Collectors.toList());
-
-        cache.put(userId, result);
-        return result;
     }
 
     private record CachedMemory(UserMemoryEntity entity, double[] vector) {}

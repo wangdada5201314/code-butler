@@ -24,8 +24,8 @@ public class QuotaConfigService {
 
     private static final Logger log = LoggerFactory.getLogger(QuotaConfigService.class);
 
-    /** 内存缓存：opType -> dailyLimit */
-    private final Map<String, Integer> limitCache = new ConcurrentHashMap<>();
+    /** 内存缓存：opType -> dailyLimit（volatile 引用，reloadCache 时原子替换） */
+    private volatile Map<String, Integer> limitCache = new ConcurrentHashMap<>();
 
     private final QuotaConfigMapper quotaConfigMapper;
 
@@ -43,14 +43,15 @@ public class QuotaConfigService {
     }
 
     /**
-     * 重新从数据库加载缓存
+     * 重新从数据库加载缓存（原子替换引用，避免 clear-then-populate 竞态）
      */
     public void reloadCache() {
-        limitCache.clear();
+        Map<String, Integer> newCache = new ConcurrentHashMap<>();
         List<QuotaConfig> configs = quotaConfigMapper.selectAll();
         for (QuotaConfig c : configs) {
-            limitCache.put(c.getOpType(), c.getDailyLimit());
+            newCache.put(c.getOpType(), c.getDailyLimit());
         }
+        this.limitCache = newCache; // volatile 写，原子可见
     }
 
     /**

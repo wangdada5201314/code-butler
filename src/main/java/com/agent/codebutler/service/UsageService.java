@@ -3,6 +3,7 @@ package com.agent.codebutler.service;
 import com.agent.codebutler.mapper.OperationRecordMapper;
 import com.agent.codebutler.model.entity.OperationRecord;
 import com.agent.codebutler.model.vo.UsageStatsVO;
+import com.agent.codebutler.util.TextUtils;
 import com.mybatisflex.core.query.QueryColumn;
 import com.mybatisflex.core.query.QueryMethods;
 import com.mybatisflex.core.query.QueryWrapper;
@@ -136,7 +137,9 @@ public class UsageService {
      *
      * @param texts 要估算的文本（可多个，会合并计算）
      * @return 估算 token 数
+     * @deprecated Use {@link TextUtils#estimateTokens} instead
      */
+    @Deprecated
     public static int estimateTokens(String... texts) {
         int totalChars = 0;
         for (String text : texts) {

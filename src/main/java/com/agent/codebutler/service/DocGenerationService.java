@@ -1,5 +1,6 @@
 package com.agent.codebutler.service;
 
+import com.agent.codebutler.config.AgentScopeProperties;
 import com.agent.codebutler.dto.DocGenerateResult;
 import com.agent.codebutler.tools.MemoryTools;
 import io.agentscope.core.agent.RuntimeContext;
@@ -7,7 +8,6 @@ import io.agentscope.core.message.UserMessage;
 import io.agentscope.harness.agent.HarnessAgent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -28,18 +28,18 @@ public class DocGenerationService {
     private final CodeScannerService codeScanner;
     private final OperationRecordService operationRecordService;
     private final MemoryTools memoryTools;
-
-    @Value("${agentscope.call-timeout-seconds:120}")
-    private int agentCallTimeoutSeconds;
+    private final AgentScopeProperties agentScopeProperties;
 
     public DocGenerationService(HarnessAgent agent,
                                 CodeScannerService codeScanner,
                                 OperationRecordService operationRecordService,
-                                MemoryTools memoryTools) {
+                                MemoryTools memoryTools,
+                                AgentScopeProperties agentScopeProperties) {
         this.agent = agent;
         this.codeScanner = codeScanner;
         this.operationRecordService = operationRecordService;
         this.memoryTools = memoryTools;
+        this.agentScopeProperties = agentScopeProperties;
     }
 
     public boolean isValidDocType(String docType) {
@@ -92,7 +92,7 @@ public class DocGenerationService {
         try {
             result = CodeReviewService.extractText(
                     agent.call(new UserMessage(prompt), ctx)
-                            .timeout(Duration.ofSeconds(agentCallTimeoutSeconds))
+                            .timeout(Duration.ofSeconds(agentScopeProperties.getCallTimeoutSeconds()))
                             .block());
         } finally {
             if (userId != null) memoryTools.clearUserId();

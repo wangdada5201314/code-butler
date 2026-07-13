@@ -1,6 +1,8 @@
 package com.agent.codebutler.middleware;
 
+import com.agent.codebutler.util.ThreadLocalContext;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.MiddlewareBase;
@@ -56,12 +58,27 @@ public class AgentTraceMiddleware implements MiddlewareBase {
         traceConsumer.remove();
     }
 
+    /**
+     * 创建一个追踪消费者作用域，设置回调并在关闭时自动清理
+     * <p>
+     * 推荐使用 try-with-resources 模式：
+     * <pre>{@code
+     * try (var scope = middleware.scopedTraceConsumer(event -> sink.tryEmitNext(event))) {
+     *     // Agent 调用期间追踪事件会推送到 sink
+     * }
+     * // traceConsumer 已自动清理
+     * }</pre>
+     */
+    public ThreadLocalContext.Scope scopedTraceConsumer(Consumer<AgentTraceEvent> consumer) {
+        return ThreadLocalContext.scopedValue(traceConsumer, consumer);
+    }
+
     // ════════════════════════════════════════════════════════
     //  1. 推理追踪
     // ════════════════════════════════════════════════════════
 
     @Override
-    public Flux<AgentEvent> onReasoning(Agent agent, ReasoningInput input,
+    public Flux<AgentEvent> onReasoning(Agent agent, RuntimeContext runtimeCtx, ReasoningInput input,
                                          Function<ReasoningInput, Flux<AgentEvent>> next) {
         String sessionId = extractSessionId(agent);
         Instant start = Instant.now();
@@ -100,7 +117,7 @@ public class AgentTraceMiddleware implements MiddlewareBase {
     // ════════════════════════════════════════════════════════
 
     @Override
-    public Flux<AgentEvent> onActing(Agent agent, ActingInput input,
+    public Flux<AgentEvent> onActing(Agent agent, RuntimeContext runtimeCtx, ActingInput input,
                                       Function<ActingInput, Flux<AgentEvent>> next) {
         List<?> toolCalls = input.toolCalls();
         List<String> toolNames = new ArrayList<>();

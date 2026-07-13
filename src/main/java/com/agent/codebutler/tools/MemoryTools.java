@@ -1,6 +1,7 @@
 package com.agent.codebutler.tools;
 
 import com.agent.codebutler.service.UserMemoryService;
+import com.agent.codebutler.util.ThreadLocalContext;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 
@@ -40,6 +41,21 @@ public class MemoryTools {
      */
     public void clearUserId() {
         currentUserId.remove();
+    }
+
+    /**
+     * 创建一个 userId 作用域，设置用户 ID 并在关闭时自动清理
+     * <p>
+     * 推荐使用 try-with-resources 模式：
+     * <pre>{@code
+     * try (var scope = memoryTools.scopedUserId(userId)) {
+     *     // Agent 调用期间 userId 可用
+     * }
+     * // userId 已自动清理
+     * }</pre>
+     */
+    public ThreadLocalContext.Scope scopedUserId(Long userId) {
+        return ThreadLocalContext.scopedValue(currentUserId, userId);
     }
 
     @Tool(name = "record_to_memory",

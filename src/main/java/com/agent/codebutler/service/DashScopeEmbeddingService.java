@@ -1,5 +1,7 @@
 package com.agent.codebutler.service;
 
+import com.agent.codebutler.config.EmbeddingProperties;
+import com.agent.codebutler.util.VectorUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -32,19 +34,7 @@ public class DashScopeEmbeddingService {
 
     private static final String DASHSCOPE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings";
 
-    /** Embedding API 地址（优先读取） */
-    @Value("${embedding.api-url:#{null}}")
-    private String apiUrl;
-
-    /** Embedding API Key（优先读取） */
-    @Value("${embedding.api-key:#{null}}")
-    private String apiKey;
-
-    @Value("${embedding.model:text-embedding-v3}")
-    private String model;
-
-    @Value("${embedding.dimensions:1024}")
-    private int dimensions;
+    private final EmbeddingProperties embeddingProps;
 
     /** DashScope 备用 Key */
     @Value("${dashscope.api-key:#{null}}")
@@ -60,7 +50,8 @@ public class DashScopeEmbeddingService {
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
 
-    public DashScopeEmbeddingService() {
+    public DashScopeEmbeddingService(EmbeddingProperties embeddingProps) {
+        this.embeddingProps = embeddingProps;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
@@ -103,14 +94,14 @@ public class DashScopeEmbeddingService {
 
         try {
             log.info("[Embedding] 调用: url={}, model={}, dimensions={}, batchSize={}",
-                    resolvedUrl, model, dimensions, texts.size());
+                    resolvedUrl, embeddingProps.getModel(), embeddingProps.getDimensions(), texts.size());
 
             // 构建请求体（OpenAI 兼容格式）
             var requestBody = objectMapper.createObjectNode();
-            requestBody.put("model", model);
+            requestBody.put("model", embeddingProps.getModel());
             // dimensions 参数仅部分提供商支持（DashScope/OpenAI），DeepSeek 不支持
-            if (dimensions > 0 && !resolvedUrl.contains("deepseek")) {
-                requestBody.put("dimensions", dimensions);
+            if (embeddingProps.getDimensions() > 0 && !resolvedUrl.contains("deepseek")) {
+                requestBody.put("dimensions", embeddingProps.getDimensions());
             }
             var inputArray = requestBody.putArray("input");
             for (String text : texts) {
@@ -157,7 +148,7 @@ public class DashScopeEmbeddingService {
             JsonNode usage = root.get("usage");
             if (usage != null) {
                 int tokens = usage.has("total_tokens") ? usage.get("total_tokens").asInt() : 0;
-                log.info("Embedding 完成: {} 条文本, {} tokens, {} 维", texts.size(), tokens, dimensions);
+                log.info("Embedding 完成: {} 条文本, {} tokens, {} 维", texts.size(), tokens, embeddingProps.getDimensions());
             }
 
             return embeddings;
@@ -170,7 +161,10 @@ public class DashScopeEmbeddingService {
 
     /**
      * 计算两个向量的余弦相似度
+     *
+     * @deprecated Use {@link VectorUtils#cosineSimilarity} instead
      */
+    @Deprecated
     public static double cosineSimilarity(double[] a, double[] b) {
         if (a.length != b.length || a.length == 0) return 0.0;
         double dotProduct = 0.0, normA = 0.0, normB = 0.0;
@@ -185,7 +179,10 @@ public class DashScopeEmbeddingService {
 
     /**
      * 向量 → JSON 数组字符串
+     *
+     * @deprecated Use {@link VectorUtils#vectorToJson} instead
      */
+    @Deprecated
     public static String vectorToJson(double[] vec) {
         if (vec == null || vec.length == 0) return "[]";
         StringBuilder sb = new StringBuilder("[");
@@ -198,7 +195,10 @@ public class DashScopeEmbeddingService {
 
     /**
      * JSON 数组字符串 → 向量
+     *
+     * @deprecated Use {@link VectorUtils#jsonToVector} instead
      */
+    @Deprecated
     public static double[] jsonToVector(String json) {
         if (json == null || json.isBlank()) return new double[0];
         // 简单解析 [0.01, -0.03, ...]
@@ -215,11 +215,11 @@ public class DashScopeEmbeddingService {
     }
 
     public String getModel() {
-        return model;
+        return embeddingProps.getModel();
     }
 
     public int getDimensions() {
-        return dimensions;
+        return embeddingProps.getDimensions();
     }
 
     public boolean isConfigured() {
@@ -232,6 +232,7 @@ public class DashScopeEmbeddingService {
      */
     private String resolveApiUrl() {
         // 1. 专属配置
+        String apiUrl = embeddingProps.getApiUrl();
         if (apiUrl != null && !apiUrl.isBlank()) {
             return apiUrl;
         }
@@ -255,6 +256,7 @@ public class DashScopeEmbeddingService {
      * 优先级: embedding.api-key > dashscope.api-key > openai.api-key
      */
     private String resolveApiKey() {
+        String apiKey = embeddingProps.getApiKey();
         if (apiKey != null && !apiKey.isBlank()) return apiKey;
         if (dashscopeApiKey != null && !dashscopeApiKey.isBlank()) return dashscopeApiKey;
         if (openaiApiKey != null && !openaiApiKey.isBlank()) return openaiApiKey;

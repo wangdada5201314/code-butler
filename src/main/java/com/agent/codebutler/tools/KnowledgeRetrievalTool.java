@@ -67,6 +67,6 @@ public class KnowledgeRetrievalTool {
         CodeKnowledgeService.IndexStatus status = knowledgeService.getIndexStatus(repoPath);
         int chunkCount = knowledgeService.getChunkCount(repoPath);
         return String.format("仓库知识索引状态:\n- 阶段: %s\n- 索引片段数: %d\n- 索引文件数: %d",
-                status.phase, chunkCount, status.totalFiles);
+                status.getPhase(), chunkCount, status.getTotalFiles());
     }
 }

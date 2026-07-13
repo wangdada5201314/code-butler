@@ -1,5 +1,6 @@
 package com.agent.codebutler.service;
 
+import com.agent.codebutler.util.FileScanConstants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -20,22 +21,6 @@ import java.util.stream.Stream;
 public class CodeScannerService {
 
     private static final Logger log = LoggerFactory.getLogger(CodeScannerService.class);
-
-    // 代码文件扩展名
-    private static final Set<String> CODE_EXTENSIONS = Set.of(
-            ".java", ".kt", ".kts", ".py", ".pyi", ".js", ".ts", ".jsx", ".tsx",
-            ".go", ".rs", ".c", ".cpp", ".cc", ".h", ".hpp",
-            ".xml", ".yml", ".yaml", ".json", ".properties", ".toml",
-            ".sql", ".sh", ".bat", ".ps1",
-            ".md", ".txt", ".rst"
-    );
-
-    // 忽略的目录名
-    private static final Set<String> IGNORE_DIRS = Set.of(
-            "node_modules", ".git", ".idea", "target", "build",
-            "__pycache__", ".venv", "venv", "dist", ".gradle",
-            ".workbuddy", ".agentscope", "out"
-    );
 
     /** 缓存：repoPath -> 扫描结果 */
     private final Map<String, CachedScan> cache = new ConcurrentHashMap<>();
@@ -69,7 +54,7 @@ public class CodeScannerService {
             public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
                 if (dir.equals(root)) return FileVisitResult.CONTINUE;
                 String dirName = dir.getFileName().toString();
-                if (IGNORE_DIRS.contains(dirName)) {
+                if (FileScanConstants.IGNORE_DIRS.contains(dirName)) {
                     return FileVisitResult.SKIP_SUBTREE;
                 }
                 return FileVisitResult.CONTINUE;
@@ -80,7 +65,7 @@ public class CodeScannerService {
                 if (files.size() >= MAX_SCAN_FILES) {
                     return FileVisitResult.TERMINATE;
                 }
-                if (isCodeFile(file)) {
+                if (FileScanConstants.isSourceFile(file)) {
                     files.add(file);
                 }
                 return FileVisitResult.CONTINUE;
@@ -108,7 +93,7 @@ public class CodeScannerService {
 
         // 按语言分类统计
         Map<String, Long> languageCount = files.stream()
-                .collect(Collectors.groupingBy(this::getLanguage, Collectors.counting()));
+                .collect(Collectors.groupingBy(FileScanConstants::detectLanguage, Collectors.counting()));
 
         // 构建概述文本
         StringBuilder sb = new StringBuilder();
@@ -168,50 +153,13 @@ public class CodeScannerService {
 
     // ---- 内部方法 ----
 
-    private boolean isCodeFile(Path path) {
-        String name = path.getFileName().toString().toLowerCase();
-        int dot = name.lastIndexOf('.');
-        if (dot < 0) return false;
-        return CODE_EXTENSIONS.contains(name.substring(dot));
-    }
-
-    /**
-     * 改进的语言识别：按优先级精确匹配
-     */
-    private String getLanguage(Path path) {
-        String name = path.getFileName().toString().toLowerCase();
-
-        if (name.endsWith(".java")) return "Java";
-        if (name.endsWith(".kt") || name.endsWith(".kts")) return "Kotlin";
-        if (name.endsWith(".py") || name.endsWith(".pyi")) return "Python";
-        if (name.endsWith(".tsx")) return "TypeScript/React";
-        if (name.endsWith(".jsx")) return "JavaScript/React";
-        if (name.endsWith(".ts")) return "TypeScript";
-        if (name.endsWith(".js") || name.endsWith(".mjs") || name.endsWith(".cjs")) return "JavaScript";
-        if (name.endsWith(".go")) return "Go";
-        if (name.endsWith(".rs")) return "Rust";
-        if (name.endsWith(".c") || name.endsWith(".h")) return "C";
-        if (name.endsWith(".cpp") || name.endsWith(".cc") || name.endsWith(".hpp")) return "C++";
-        if (name.endsWith(".sql")) return "SQL";
-        if (name.endsWith(".yml") || name.endsWith(".yaml")) return "YAML";
-        if (name.endsWith(".xml")) return "XML";
-        if (name.endsWith(".json")) return "JSON";
-        if (name.endsWith(".properties")) return "Properties";
-        if (name.endsWith(".toml")) return "TOML";
-        if (name.endsWith(".sh") || name.endsWith(".bash")) return "Shell";
-        if (name.endsWith(".bat") || name.endsWith(".ps1")) return "Script";
-        if (name.endsWith(".md") || name.endsWith(".rst") || name.endsWith(".txt")) return "Document";
-
-        return "Other";
-    }
-
     /**
      * 构建目录树（前 N 层）
      */
     private String buildTree(String rootPath, int maxDepth) throws IOException {
         Path root = Paths.get(rootPath);
         StringBuilder sb = new StringBuilder();
-        Set<String> ignoreDirsLower = IGNORE_DIRS.stream()
+        Set<String> ignoreDirsLower = FileScanConstants.IGNORE_DIRS.stream()
                 .map(String::toLowerCase)
                 .collect(Collectors.toSet());
 
