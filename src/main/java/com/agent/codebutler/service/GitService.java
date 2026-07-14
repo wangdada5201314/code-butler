@@ -1,5 +1,6 @@
 package com.agent.codebutler.service;
 
+import com.agent.codebutler.util.FileScanConstants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -8,13 +9,11 @@ import org.springframework.stereotype.Service;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
-import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Pattern;
 
 /**
  * Git 操作封装服务
@@ -28,10 +27,6 @@ public class GitService {
     /** Git 命令超时（秒） */
     @Value("${git.command-timeout-seconds:30}")
     private int commandTimeoutSeconds;
-
-    /** 路径遍历攻击和命令注入检测：禁止 ..、shell 特殊字符、敏感系统目录 */
-    private static final Pattern ILLEGAL_PATH_PATTERN = Pattern.compile(
-            "(\\.\\.)|([;|&`$(){}<>!])|(/etc/)|(/proc/)|(/sys/)");
 
     // ---- 公共 API ----
 
@@ -169,6 +164,11 @@ public class GitService {
 
     /**
      * 安全校验 repoPath
+     * <p>
+     * 使用 {@link FileScanConstants#ILLEGAL_PATH_PATTERN} 进行统一的安全检测（路径遍历 + 命令注入），
+     * 在此补充异常抛出行为以适配 Controller 层调用。
+     * 对语法合法但目录不存在的路径不抛异常（适配新仓库场景）。
+     *
      * @throws IllegalArgumentException 如果路径不合法
      */
     public static void validateRepoPath(String repoPath) {
@@ -176,34 +176,19 @@ public class GitService {
             throw new IllegalArgumentException("仓库路径不能为空");
         }
 
-        // 检测路径遍历攻击和命令注入字符
-        if (ILLEGAL_PATH_PATTERN.matcher(repoPath).find()) {
+        // 使用统一的安全检测正则
+        if (FileScanConstants.ILLEGAL_PATH_PATTERN.matcher(repoPath).find()) {
             throw new IllegalArgumentException("仓库路径包含非法字符: " + repoPath);
         }
 
         try {
-            Path path = Paths.get(repoPath).toRealPath();
-            if (!Files.isDirectory(path)) {
-                throw new IllegalArgumentException("仓库路径不存在或不是目录: " + repoPath);
+            Path path = Paths.get(repoPath).toAbsolutePath().normalize();
+            // normalize 后再次检查（防止编码绕过）
+            if (path.toString().contains("..")) {
+                throw new IllegalArgumentException("仓库路径包含非法字符: " + repoPath);
             }
-        } catch (InvalidPathException e) {
+        } catch (java.nio.file.InvalidPathException e) {
             throw new IllegalArgumentException("无效的路径格式: " + repoPath);
-        } catch (java.nio.file.NoSuchFileException e) {
-            // 路径不存在时，做语法级校验（normalize 检查是否含可疑片段）
-            try {
-                Path normalized = Paths.get(repoPath).toAbsolutePath().normalize();
-                String normalizedStr = normalized.toString();
-                if (normalizedStr.contains("..")) {
-                    throw new IllegalArgumentException("仓库路径包含非法字符: " + repoPath);
-                }
-            } catch (InvalidPathException ex) {
-                throw new IllegalArgumentException("无效的路径格式: " + repoPath);
-            }
-        } catch (IllegalArgumentException e) {
-            throw e;
-        } catch (Exception e) {
-            // 其他 IO 异常，保守拒绝
-            throw new IllegalArgumentException("无法验证仓库路径: " + repoPath);
         }
     }
 

@@ -38,7 +38,7 @@ public class OperationRecordService {
      * @param status    状态: COMPLETED / FAILED / TIMEOUT
      * @param tokenCount 估算 token 消耗数
      */
-    @Async
+    @Async("asyncExecutor")
     public void recordAsync(Long userId, String opType, String repoPath,
                             String input, String output, long durationMs,
                             String sessionId, String status, int tokenCount) {

@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
+import java.util.regex.Pattern;
 
 /**
  * 文件扫描与语言检测公共常量/工具
@@ -15,6 +16,12 @@ import java.util.*;
 public final class FileScanConstants {
 
     private FileScanConstants() {}
+
+    // ──────────────── 路径安全检测 ────────────────
+
+    /** 路径遍历攻击和命令注入检测：禁止 ..、shell 特殊字符、敏感系统目录 */
+    public static final Pattern ILLEGAL_PATH_PATTERN = Pattern.compile(
+            "(\\.\\.)|([;|&`$(){}<>!])|(/etc/)|(/proc/)|(/sys/)");
 
     // ──────────────── 忽略的目录（合并三处为超集） ────────────────
 
@@ -141,14 +148,25 @@ public final class FileScanConstants {
     // ──────────────── 路径校验 ────────────────
 
     /**
-     * 校验仓库路径合法性（非空、存在、是目录）
+     * 校验仓库路径合法性（非空、存在、是目录 + 安全检测）
+     * <p>
+     * 安全检测：拒绝包含路径遍历（..）、shell 特殊字符（;|&`$ 等）、
+     * 敏感系统目录（/etc/ /proc/ /sys/）的路径。
      *
      * @return 规范化后的绝对路径，不合法时返回 null
      */
     public static Path validateRepoPath(String repoPath) {
         if (repoPath == null || repoPath.isBlank()) return null;
+
+        // 安全检测：路径遍历攻击 + 命令注入
+        if (ILLEGAL_PATH_PATTERN.matcher(repoPath).find()) {
+            return null;
+        }
+
         try {
             Path path = Paths.get(repoPath).normalize().toAbsolutePath();
+            // normalize 后再次检查（防止编码绕过）
+            if (path.toString().contains("..")) return null;
             return Files.isDirectory(path) ? path : null;
         } catch (Exception e) {
             return null;

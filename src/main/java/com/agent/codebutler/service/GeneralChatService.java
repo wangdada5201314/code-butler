@@ -5,6 +5,7 @@ import com.agent.codebutler.dto.GeneralChatRequest;
 import com.agent.codebutler.middleware.AgentTraceMiddleware;
 import com.agent.codebutler.service.base.AbstractStreamingService;
 import com.agent.codebutler.tools.MemoryTools;
+import com.agent.codebutler.util.TextUtils;
 import io.agentscope.core.event.AgentEventType;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
@@ -46,10 +47,7 @@ public class GeneralChatService extends AbstractStreamingService {
         boolean planMode = Boolean.TRUE.equals(request.getPlanMode());
         log.info("通用聊天: sessionId={}, userId={}, planMode={}", sessionId, userId, planMode);
 
-        operationRecordService.recordAsync(userId, "CHAT", null,
-                message, null, 0, sessionId, "COMPLETED",
-                UsageService.estimateTokens(message));
-
+        long startTime = System.currentTimeMillis();
         String agentUserId = userId != null ? "general-" + userId : "general-chat";
 
         // Plan Mode 前缀 + 通用聊天指令
@@ -71,6 +69,11 @@ public class GeneralChatService extends AbstractStreamingService {
                 })
                 .concatWith(Flux.just(doneEvent()));
 
-        return executeStreamingSession(mainFlux, sessionId, userId, "聊天");
+        return executeStreamingSession(mainFlux, sessionId, userId,
+                getTimeoutWithOffset(30), "聊天超时", "聊天",
+                success -> operationRecordService.recordAsync(userId, "CHAT", null,
+                        message, null, System.currentTimeMillis() - startTime, sessionId,
+                        success ? "COMPLETED" : "FAILED",
+                        TextUtils.estimateTokens(message)));
     }
 }

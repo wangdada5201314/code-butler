@@ -1,10 +1,12 @@
 package com.agent.codebutler.tools;
 
 import com.agent.codebutler.service.UserMemoryService;
-import com.agent.codebutler.util.ThreadLocalContext;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -13,17 +15,21 @@ import java.util.stream.Collectors;
  * 通过 @Tool 注解注册到 AgentScope Toolkit，Agent 在推理过程中可自主决定：
  * - 何时将重要信息写入记忆（用户偏好、关键决策、项目事实）
  * - 何时检索记忆以获取历史上下文
+ * <p>
+ * 并发安全：使用 ConcurrentHashMap（线程ID → userId）替代 InheritableThreadLocal，
+ * 避免线程池复用导致的上下文串号问题。
  */
 public class MemoryTools {
+
+    private static final Logger log = LoggerFactory.getLogger(MemoryTools.class);
 
     private final UserMemoryService memoryService;
 
     /**
-     * 当前会话的用户 ID（由外层 Service 设置）。
-     * 使用 InheritableThreadLocal 确保 AgentScope 内部创建的子线程能继承父线程的 userId，
-     * 避免 Reactor 调度或工具异步执行时 ThreadLocal 丢失。
+     * 并发安全的用户 ID 存储（线程ID → userId）。
+     * 替代 InheritableThreadLocal，避免线程池复用时残留值导致不同请求串号。
      */
-    private final InheritableThreadLocal<Long> currentUserId = new InheritableThreadLocal<>();
+    private final ConcurrentHashMap<Long, Long> userIdMap = new ConcurrentHashMap<>();
 
     public MemoryTools(UserMemoryService memoryService) {
         this.memoryService = memoryService;
@@ -33,29 +39,21 @@ public class MemoryTools {
      * 设置当前请求的用户 ID（在每次 Agent 调用前由 Service 层设置）
      */
     public void setUserId(Long userId) {
-        currentUserId.set(userId);
+        userIdMap.put(Thread.currentThread().getId(), userId);
     }
 
     /**
      * 清除当前线程的用户 ID（Agent 调用结束后必须调用，防止线程池复用时串号）
      */
     public void clearUserId() {
-        currentUserId.remove();
+        userIdMap.remove(Thread.currentThread().getId());
     }
 
     /**
-     * 创建一个 userId 作用域，设置用户 ID 并在关闭时自动清理
-     * <p>
-     * 推荐使用 try-with-resources 模式：
-     * <pre>{@code
-     * try (var scope = memoryTools.scopedUserId(userId)) {
-     *     // Agent 调用期间 userId 可用
-     * }
-     * // userId 已自动清理
-     * }</pre>
+     * 获取当前线程绑定的用户 ID
      */
-    public ThreadLocalContext.Scope scopedUserId(Long userId) {
-        return ThreadLocalContext.scopedValue(currentUserId, userId);
+    private Long getCurrentUserId() {
+        return userIdMap.get(Thread.currentThread().getId());
     }
 
     @Tool(name = "record_to_memory",
@@ -64,7 +62,7 @@ public class MemoryTools {
     public String recordToMemory(
             @ToolParam(name = "content", required = true, description = "记忆内容（自然语言描述）") String content,
             @ToolParam(name = "memoryType", required = true, description = "记忆类型: PREFERENCE/DECISION/FACT/HABIT/GENERAL") String memoryType) {
-        Long userId = currentUserId.get();
+        Long userId = getCurrentUserId();
         if (userId == null) {
             return "[MEMORY] 无法记录：未获取到当前用户";
         }
@@ -84,7 +82,7 @@ public class MemoryTools {
             @ToolParam(name = "query", required = true, description = "查询文本（自然语言，如'用户偏好''上次技术选型'）") String query,
             @ToolParam(name = "limit", required = false, description = "返回数量上限，默认 5") int limit) {
         if (limit <= 0) limit = 5;
-        Long userId = currentUserId.get();
+        Long userId = getCurrentUserId();
         if (userId == null) {
             return "[MEMORY] 无法检索：未获取到当前用户";
         }

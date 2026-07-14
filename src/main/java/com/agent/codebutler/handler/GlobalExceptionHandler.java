@@ -85,6 +85,14 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.error(400, ex.getMessage()));
     }
 
+    /** 非法状态（如 GitHub Token 未配置、服务未就绪等业务前置条件不满足） */
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<ApiResponse<Void>> handleIllegalState(IllegalStateException ex) {
+        log.warn("非法状态: {}", ex.getMessage());
+        return ResponseEntity.unprocessableEntity()
+                .body(ApiResponse.error(422, ex.getMessage()));
+    }
+
     /** 业务异常 — 根据语义错误码映射 HTTP 状态 */
     @ExceptionHandler(com.agent.codebutler.exception.BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> handleBusinessException(

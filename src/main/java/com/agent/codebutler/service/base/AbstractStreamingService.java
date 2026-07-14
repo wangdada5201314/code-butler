@@ -60,6 +60,7 @@ public abstract class AbstractStreamingService {
      * @param timeoutSeconds  总超时秒数（含缓冲）
      * @param timeoutMessage  超时错误消息
      * @param errorContext    错误日志上下文描述
+     * @param onComplete      流结束后的回调（参数为 true=正常完成, false=异常/超时），可为 null
      * @return 完整的 SSE 事件流（含 trace、超时、错误处理）
      */
     protected Flux<ServerSentEvent<String>> executeStreamingSession(
@@ -68,7 +69,8 @@ public abstract class AbstractStreamingService {
             Long userId,
             int timeoutSeconds,
             String timeoutMessage,
-            String errorContext) {
+            String errorContext,
+            java.util.function.Consumer<Boolean> onComplete) {
 
         // 设置 ThreadLocal（在 boundedElastic 线程上执行）
         if (userId != null) {
@@ -89,6 +91,9 @@ public abstract class AbstractStreamingService {
                     }
                 });
 
+        // 用 AtomicBoolean 追踪是否正常完成（非错误/超时）
+        java.util.concurrent.atomic.AtomicBoolean completedSuccessfully = new java.util.concurrent.atomic.AtomicBoolean(true);
+
         return Flux.merge(mainFlux, traceFlux)
                 .timeout(Duration.ofSeconds(timeoutSeconds),
                         Flux.just(
@@ -97,6 +102,7 @@ public abstract class AbstractStreamingService {
                                 ServerSentEvent.<String>builder()
                                         .event("done").data("[DONE]").build()))
                 .onErrorResume(e -> {
+                    completedSuccessfully.set(false);
                     log.error("流式{}异常: sessionId={}", errorContext, sessionId, e);
                     String safeMsg = TextUtils.sanitizeSseError(e.getMessage());
                     return Flux.just(
@@ -108,7 +114,28 @@ public abstract class AbstractStreamingService {
                 .doFinally(signal -> {
                     if (userId != null) memoryTools.clearUserId();
                     agentTraceMiddleware.clearTraceConsumer();
+                    if (onComplete != null) {
+                        try {
+                            onComplete.accept(completedSuccessfully.get());
+                        } catch (Exception e) {
+                            log.warn("流式完成回调异常: {}", e.getMessage());
+                        }
+                    }
                 });
+    }
+
+    /**
+     * 不带完成回调的便捷版本（向后兼容）
+     */
+    protected Flux<ServerSentEvent<String>> executeStreamingSession(
+            Flux<ServerSentEvent<String>> mainFlux,
+            String sessionId,
+            Long userId,
+            int timeoutSeconds,
+            String timeoutMessage,
+            String errorContext) {
+        return executeStreamingSession(mainFlux, sessionId, userId, timeoutSeconds,
+                timeoutMessage, errorContext, null);
     }
 
     /**

@@ -37,8 +37,14 @@ public class CodeKnowledgeService {
 
     private static final Logger log = LoggerFactory.getLogger(CodeKnowledgeService.class);
 
-    /** 内存向量缓存: repoPath → List<KnowledgeChunk> */
+    /** 内存向量缓存: repoPath → List<KnowledgeChunk>（LRU 淘汰，最多缓存 MAX_CACHED_REPOS 个仓库） */
     private final Map<String, List<KnowledgeChunk>> vectorCache = new ConcurrentHashMap<>();
+
+    /** 最大缓存仓库数（超过后淘汰最早写入的缓存） */
+    private static final int MAX_CACHED_REPOS = 10;
+
+    /** 缓存写入顺序，用于 LRU 淘汰 */
+    private final Deque<String> cacheAccessOrder = new java.util.concurrent.ConcurrentLinkedDeque<>();
 
     /** 索引状态追踪: repoPath → IndexStatus */
     private final Map<String, IndexStatus> indexStatusMap = new ConcurrentHashMap<>();
@@ -138,7 +144,7 @@ public class CodeKnowledgeService {
             knowledgeRepo.deleteByRepoPath(normalizedPath); // 清除旧数据
 
             List<KnowledgeChunk> knowledgeChunks = knowledgeRepo.saveChunks(normalizedPath, chunks, allEmbeddings);
-            vectorCache.put(normalizedPath, knowledgeChunks);
+            cacheAndEvictIfNeeded(normalizedPath, knowledgeChunks);
 
             statusBuilder.phase("完成").indexedChunks(knowledgeChunks.size());
             IndexStatus finalStatus = statusBuilder.build();
@@ -199,7 +205,7 @@ public class CodeKnowledgeService {
             if (chunks == null || chunks.isEmpty()) {
                 chunks = knowledgeRepo.loadFromDatabase(normalizedPath);
                 if (!chunks.isEmpty()) {
-                    vectorCache.put(normalizedPath, chunks);
+                    cacheAndEvictIfNeeded(normalizedPath, chunks);
                     log.info("[RAG] 从数据库加载 {} 个知识片段到缓存: {}", chunks.size(), normalizedPath);
                 }
             }
@@ -306,6 +312,29 @@ public class CodeKnowledgeService {
         List<KnowledgeChunk> cached = vectorCache.get(normalizedPath);
         if (cached != null) return cached.size();
         return knowledgeRepo.getChunkCount(normalizedPath);
+    }
+
+    // ════════════════════════════════════════════════════════
+    //  缓存淘汰
+    // ════════════════════════════════════════════════════════
+
+    /**
+     * 写入缓存并执行 LRU 淘汰（超过 MAX_CACHED_REPOS 时移除最早写入的缓存）
+     */
+    private void cacheAndEvictIfNeeded(String normalizedPath, List<KnowledgeChunk> chunks) {
+        // 更新访问顺序（移除旧的再添加到尾部）
+        cacheAccessOrder.remove(normalizedPath);
+        cacheAccessOrder.addLast(normalizedPath);
+        vectorCache.put(normalizedPath, chunks);
+
+        // 淘汰最旧的缓存
+        while (vectorCache.size() > MAX_CACHED_REPOS && !cacheAccessOrder.isEmpty()) {
+            String evicted = cacheAccessOrder.pollFirst();
+            if (evicted != null) {
+                vectorCache.remove(evicted);
+                log.info("[RAG] 缓存淘汰: {} (已缓存 {} 个仓库)", evicted, vectorCache.size());
+            }
+        }
     }
 
     // ════════════════════════════════════════════════════════

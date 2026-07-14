@@ -87,8 +87,7 @@ public class CodeReviewService extends AbstractStreamingService {
 
         log.info("开始流式代码审查: sessionId={}, repoPath={}, isGitHub={}", sessionId, repoPath, isGitHub);
 
-        operationRecordService.recordAsync(userId, "REVIEW", repoPath,
-                null, null, 0, sessionId, "COMPLETED", 0);
+        long startTime = System.currentTimeMillis();
 
         String prompt;
         try {
@@ -128,7 +127,10 @@ public class CodeReviewService extends AbstractStreamingService {
                 .concatWith(Flux.just(doneEvent()));
 
         return executeStreamingSession(mainFlux, sessionId, userId,
-                getTimeoutWithOffset(60), "审查超时", "代码审查");
+                getTimeoutWithOffset(60), "审查超时", "代码审查",
+                success -> operationRecordService.recordAsync(userId, "REVIEW", repoPath,
+                        null, null, System.currentTimeMillis() - startTime, sessionId,
+                        success ? "COMPLETED" : "FAILED", 0));
     }
 
     // ════════════════════════════════════════════════════════

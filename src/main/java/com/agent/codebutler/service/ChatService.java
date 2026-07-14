@@ -3,6 +3,7 @@ package com.agent.codebutler.service;
 import com.agent.codebutler.config.AgentScopeProperties;
 import com.agent.codebutler.dto.CodeChatRequest;
 import com.agent.codebutler.util.GitHubUtils;
+import com.agent.codebutler.util.TextUtils;
 import com.agent.codebutler.middleware.AgentTraceMiddleware;
 import com.agent.codebutler.service.base.AbstractStreamingService;
 import com.agent.codebutler.tools.MemoryTools;
@@ -63,11 +64,7 @@ public class ChatService extends AbstractStreamingService {
         }
         log.info("开始流式问答: sessionId={}, repoPath={}, isGitHub={}, userId={}", sessionId, repoPath, isGitHub, userId);
 
-        // 记录操作历史
-        operationRecordService.recordAsync(userId, "CHAT", repoPath,
-                question, null, 0, sessionId, "COMPLETED",
-                UsageService.estimateTokens(question));
-
+        long startTime = System.currentTimeMillis();
         String agentUserId = userId != null ? "chat-" + userId : "code-chat";
         boolean planMode = Boolean.TRUE.equals(request.getPlanMode());
 
@@ -94,7 +91,12 @@ public class ChatService extends AbstractStreamingService {
                 })
                 .concatWith(Flux.just(doneEvent()));
 
-        return executeStreamingSession(mainFlux, sessionId, userId, "问答");
+        return executeStreamingSession(mainFlux, sessionId, userId,
+                getTimeoutWithOffset(30), "问答超时", "问答",
+                success -> operationRecordService.recordAsync(userId, "CHAT", repoPath,
+                        question, null, System.currentTimeMillis() - startTime, sessionId,
+                        success ? "COMPLETED" : "FAILED",
+                        TextUtils.estimateTokens(question)));
     }
 
     private String buildPrompt(String repoPath, String question, boolean isGitHub, boolean planMode) throws Exception {

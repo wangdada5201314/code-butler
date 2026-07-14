@@ -23,8 +23,11 @@ import java.util.function.Function;
 /**
  * Agent 执行追踪 Middleware — 将推理/工具调用/子 Agent 事件推送到前端
  * <p>
- * 使用 {@link InheritableThreadLocal} 持有回调函数，Service 层在调用 Agent 前设置回调、
+ * 使用 {@link ConcurrentHashMap}（线程ID → Consumer）持有回调函数，Service 层在调用 Agent 前设置回调、
  * 调用后清理。Middleware 在 onReasoning/onActing 中通过回调推送 {@link AgentTraceEvent}。
+ * <p>
+ * 并发安全：使用 ConcurrentHashMap（线程ID → Consumer）替代 InheritableThreadLocal，
+ * 避免线程池复用导致的上下文串号问题。
  * <p>
  * 面试价值：展示 Middleware 架构 + 可观测性 + 前端实时可视化的完整链路。
  */
@@ -34,9 +37,9 @@ public class AgentTraceMiddleware implements MiddlewareBase {
 
     /**
      * 追踪事件回调（由 Service 层设置，指向 SSE sink）。
-     * 使用 InheritableThreadLocal 确保子线程（工具执行线程）能访问回调。
+     * 使用 ConcurrentHashMap（线程ID → Consumer）确保并发安全，避免线程池复用串号。
      */
-    private final InheritableThreadLocal<Consumer<AgentTraceEvent>> traceConsumer = new InheritableThreadLocal<>();
+    private final ConcurrentHashMap<Long, Consumer<AgentTraceEvent>> traceConsumers = new ConcurrentHashMap<>();
 
     /** 推理轮次计数器 (sessionId -> round) */
     private final Map<String, AtomicInteger> reasoningRounds = new ConcurrentHashMap<>();
@@ -48,14 +51,14 @@ public class AgentTraceMiddleware implements MiddlewareBase {
      * 设置当前请求的追踪事件消费者（Service 层在 Agent 调用前调用）
      */
     public void setTraceConsumer(Consumer<AgentTraceEvent> consumer) {
-        traceConsumer.set(consumer);
+        traceConsumers.put(Thread.currentThread().getId(), consumer);
     }
 
     /**
      * 清理当前线程的追踪消费者（必须在 Agent 调用结束后清理，防止线程池复用串号）
      */
     public void clearTraceConsumer() {
-        traceConsumer.remove();
+        traceConsumers.remove(Thread.currentThread().getId());
     }
 
     /**
@@ -70,7 +73,9 @@ public class AgentTraceMiddleware implements MiddlewareBase {
      * }</pre>
      */
     public ThreadLocalContext.Scope scopedTraceConsumer(Consumer<AgentTraceEvent> consumer) {
-        return ThreadLocalContext.scopedValue(traceConsumer, consumer);
+        long threadId = Thread.currentThread().getId();
+        traceConsumers.put(threadId, consumer);
+        return () -> traceConsumers.remove(threadId);
     }
 
     // ════════════════════════════════════════════════════════
@@ -78,7 +83,7 @@ public class AgentTraceMiddleware implements MiddlewareBase {
     // ════════════════════════════════════════════════════════
 
     @Override
-    public Flux<AgentEvent> onReasoning(Agent agent, RuntimeContext runtimeCtx, ReasoningInput input,
+    public Flux<AgentEvent> onReasoning(Agent agent, RuntimeContext ctx, ReasoningInput input,
                                          Function<ReasoningInput, Flux<AgentEvent>> next) {
         String sessionId = extractSessionId(agent);
         Instant start = Instant.now();
@@ -117,7 +122,7 @@ public class AgentTraceMiddleware implements MiddlewareBase {
     // ════════════════════════════════════════════════════════
 
     @Override
-    public Flux<AgentEvent> onActing(Agent agent, RuntimeContext runtimeCtx, ActingInput input,
+    public Flux<AgentEvent> onActing(Agent agent, RuntimeContext ctx, ActingInput input,
                                       Function<ActingInput, Flux<AgentEvent>> next) {
         List<?> toolCalls = input.toolCalls();
         List<String> toolNames = new ArrayList<>();
@@ -168,7 +173,7 @@ public class AgentTraceMiddleware implements MiddlewareBase {
     // ════════════════════════════════════════════════════════
 
     private void emitTrace(AgentTraceEvent event) {
-        Consumer<AgentTraceEvent> consumer = traceConsumer.get();
+        Consumer<AgentTraceEvent> consumer = traceConsumers.get(Thread.currentThread().getId());
         if (consumer != null) {
             try {
                 consumer.accept(event);

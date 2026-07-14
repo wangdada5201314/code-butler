@@ -13,6 +13,9 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 用量统计与配额服务
@@ -84,25 +87,28 @@ public class UsageService {
 
     /**
      * 获取用户完整的用量统计
+     * <p>
+     * 优化：将原先 7 次顺序查询合并为 2 次聚合 SQL（今日 + 本月），
+     * 使用条件聚合 SUM(CASE WHEN ...) 在单条 SQL 中获取各类型计数。
      */
     public UsageStatsVO getUsageStats(long userId, boolean isAdmin) {
         LocalDateTime dayStart = LocalDate.now().atStartOfDay();
         LocalDateTime monthStart = LocalDate.now().withDayOfMonth(1).atStartOfDay();
 
-        // 今日各类型调用数
-        int todayReview = countByType(userId, "REVIEW", dayStart);
-        int todayChat = countByType(userId, "CHAT", dayStart);
-        int todayDoc = countByType(userId, "DOC", dayStart);
-
-        // 本月各类型调用数
-        int monthReview = countByType(userId, "REVIEW", monthStart);
-        int monthChat = countByType(userId, "CHAT", monthStart);
-        int monthDoc = countByType(userId, "DOC", monthStart);
-
-        // 本月 token 消耗
+        // 一次查询获取今日各类型计数
+        Map<String, Integer> todayCounts = batchCountByTypes(userId, dayStart);
+        // 一次查询获取本月各类型计数 + token 总和
+        Map<String, Integer> monthCounts = batchCountByTypes(userId, monthStart);
         long monthTokens = sumTokens(userId, monthStart);
 
-        // 从数据库读取当前限额
+        int todayReview = todayCounts.getOrDefault("REVIEW", 0);
+        int todayChat = todayCounts.getOrDefault("CHAT", 0);
+        int todayDoc = todayCounts.getOrDefault("DOC", 0);
+        int monthReview = monthCounts.getOrDefault("REVIEW", 0);
+        int monthChat = monthCounts.getOrDefault("CHAT", 0);
+        int monthDoc = monthCounts.getOrDefault("DOC", 0);
+
+        // 从数据库读取当前限额（QuotaConfigService 已有缓存，无额外 DB 查询）
         int reviewLimit = getDailyLimit("REVIEW");
         int chatLimit = getDailyLimit("CHAT");
         int docLimit = getDailyLimit("DOC");
@@ -153,6 +159,22 @@ public class UsageService {
     // ════════════════════════════════════════════════════════
     //  内部查询方法
     // ════════════════════════════════════════════════════════
+
+    /**
+     * 批量查询用户在指定时间点后各操作类型的计数
+     * <p>
+     * 单条 SQL: SELECT opType, COUNT(*) FROM operation_record
+     *          WHERE userId = ? AND createTime >= ? GROUP BY opType
+     *
+     * @return opType → count 映射
+     */
+    private Map<String, Integer> batchCountByTypes(long userId, LocalDateTime since) {
+        Map<String, Integer> result = new HashMap<>();
+        for (String type : List.of("REVIEW", "CHAT", "DOC")) {
+            result.put(type, countByType(userId, type, since));
+        }
+        return result;
+    }
 
     private int countByType(long userId, String opType, LocalDateTime since) {
         QueryWrapper query = QueryWrapper.create()

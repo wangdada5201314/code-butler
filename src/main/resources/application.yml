@@ -9,6 +9,7 @@
 
 server:
   port: 8080
+  shutdown: graceful                       # 优雅关闭（等待正在处理的请求完成）
   servlet:
     session:
       cookie:
@@ -19,6 +20,8 @@ server:
 spring:
   application:
     name: code-butler
+  lifecycle:
+    timeout-per-shutdown-phase: 30s        # 优雅关闭等待时间（SSE 流式请求最长 120s+30s 缓冲）
   # 默认激活 local profile → 自动合并 application-local.yml
   profiles:
     active: local
@@ -85,7 +88,7 @@ mybatis-flex:
 
 # ── CORS ──
 cors:
-  allowed-origins: "*"
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000}
 
 # ── AgentScope ──
 agentscope:
